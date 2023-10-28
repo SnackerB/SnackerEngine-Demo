@@ -42,6 +42,9 @@ private:
 	void answerPingRequest(const Client& client);
 	/// Answers a serpID request of the given client
 	void answerSerpIDRequest(const Client& client);
+	/// Answers a doesClientExist request from the given client. The serpID of the requested client
+	/// is given as a string
+	void answerClientExistsRequest(const Client& client, const std::string& requestedClient);
 	/// Sends a response with the given status code and a string in the message body to the given socket
 	void sendMessageResponse(const Client& client, SnackerEngine::ResponseStatusCode responseStatusCode, const std::string& message);
 	/// Checks if the given message is ok to relay, and changes the header structure accordingly

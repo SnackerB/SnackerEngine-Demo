@@ -120,6 +120,11 @@ void SERPServer::handleRequestToServer(const Client& client, SnackerEngine::HTTP
 			std::cout << "serpID request detected!" << std::endl;
 			return;
 		}
+		else if (path.size() == 2 && path[0] == "clients") {
+			answerClientExistsRequest(client, path[1]);
+			std::cout << "client exists request detected!" << std::endl;
+			return;
+		}
 	}
 	sendMessageResponse(client, SnackerEngine::ResponseStatusCode::BAD_REQUEST, "bad request: \"" + request.path + "\"");
 	std::cout << "bad request: \"" << request.path << "\"" << std::endl;
@@ -168,6 +173,23 @@ void SERPServer::answerPingRequest(const Client& client)
 void SERPServer::answerSerpIDRequest(const Client& client)
 {
 	sendMessageResponse(client, SnackerEngine::ResponseStatusCode::OK, SnackerEngine::to_string(client.getSerpID()));
+}
+
+void SERPServer::answerClientExistsRequest(const Client& client, const std::string& requestedClient)
+{
+	auto requestedClientID = SnackerEngine::parseSERPID(requestedClient);
+	if (requestedClientID.has_value()) {
+		auto requestedClientIndex = findClientIndex(requestedClientID.value());
+		if (requestedClientIndex.has_value()) {
+			sendMessageResponse(client, SnackerEngine::ResponseStatusCode::OK, "");
+		}
+		else {
+			sendMessageResponse(client, SnackerEngine::ResponseStatusCode::NOT_FOUND, "no client with serpID " + requestedClient + " is currently connected!");
+		}
+	}
+	else {
+		sendMessageResponse(client, SnackerEngine::ResponseStatusCode::BAD_REQUEST, "\"" + requestedClient + "\" is not a valid SerpID!");
+	}
 }
 
 void SERPServer::sendMessageResponse(const Client& client, SnackerEngine::ResponseStatusCode responseStatusCode, const std::string& message)

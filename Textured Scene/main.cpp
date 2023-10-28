@@ -9,6 +9,7 @@
 #include "Graphics/Meshes/Sphere.h"
 #include "Graphics/Meshes/Cube.h"
 #include "Graphics/Renderer.h"
+#include "Utility\Buffer.h"
 
 class TextureDemo : public SnackerEngine::Scene
 {
@@ -47,6 +48,15 @@ public:
 		camera.setFarPlane(1000.0f);
 		simpleMaterial.getShader().bind();
 		simpleMaterial.getShader().setUniform<int>("u_Texture", 0);
+
+		// DEBUG
+		std::optional<std::string> fullPath = SnackerEngine::Engine::getFullPath("textures/mona_lisa.jpg");
+		if (fullPath.has_value()) {
+			std::optional<SnackerEngine::Buffer> rawDataBuffer = SnackerEngine::Buffer::loadFromFile(fullPath.value());
+			if (rawDataBuffer.has_value()) {
+				containerTexture = SnackerEngine::Texture::Load2DFromRawData(rawDataBuffer.value().getBufferView(), fullPath.value()).first;
+			}
+		}
 	}
 
 	void update(const double& dt) override

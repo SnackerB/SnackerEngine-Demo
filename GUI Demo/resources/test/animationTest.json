@@ -1,0 +1,72 @@
+[
+  {
+    "typeID": "GUI_PANEL",
+    "position": [ 100, 100 ],
+    "size": [ 100, 50 ],
+    "backgroundColor": [ 1.0, 0.0, 0.0, 1.0 ],
+    "name": "panel"
+  },
+  {
+    "typeID": "GUI_SLIDER_FLOAT",
+    "position": [ 100, 200 ],
+    "size": [ 400, 60 ],
+    "value": 0.0,
+    "minValue": 0.0,
+    "maxValue": 1.0,
+    "backgroundColor": [ 0.1, 0.1, 0.1, 1.0 ],
+    "name": "slider"
+  },
+  {
+    "typeID": "GUI_BUTTON",
+    "position": [ 100, 300 ],
+    "sizeHintModeMinSize": "SET_TO_TEXT_SIZE",
+    "text": "Animate",
+    "name": "buttonAnimate"
+  },
+  {
+    "typeID": "GUI_VERTICAL_SCROLLING_LIST_LAYOUT",
+    "resizeMode": "RESIZE_RANGE",
+    "position": [ 100, 400 ],
+    "size": [ 400, 200 ],
+    "backgroundColor": [ 0.5, 0.1, 0.1, 1.0 ],
+    "name": "scrollingList",
+    "children": [
+      {
+        "typeID": "GUI_TEXT_BOX",
+        "text": "Hello World 1"
+      },
+      {
+        "typeID": "GUI_TEXT_BOX",
+        "text": "Hello World 2"
+      },
+      {
+        "typeID": "GUI_TEXT_BOX",
+        "text": "Hello World 3"
+      },
+      {
+        "typeID": "GUI_TEXT_BOX",
+        "text": "Hello World 4"
+      },
+      {
+        "typeID": "GUI_TEXT_BOX",
+        "text": "Hello World 5"
+      },
+      {
+        "typeID": "GUI_TEXT_BOX",
+        "text": "Hello World 6"
+      },
+      {
+        "typeID": "GUI_TEXT_BOX",
+        "text": "Hello World 7"
+      },
+      {
+        "typeID": "GUI_TEXT_BOX",
+        "text": "Hello World 8"
+      },
+      {
+        "typeID": "GUI_TEXT_BOX",
+        "text": "Hello World 9"
+      }
+    ]
+  }
+]

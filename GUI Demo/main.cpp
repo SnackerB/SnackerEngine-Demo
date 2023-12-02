@@ -2,6 +2,9 @@
 #include "Gui/GuiManager.h"
 #include "Utility/Keys.h"
 #include "Gui/GuiManager.h"
+#include "Gui\GuiElements\GuiButton.h"
+#include "Gui\GuiElements\GuiSlider.h"
+#include "Gui\Layouts\VerticalScrollingListLayout.h"
 
 #include <queue>
 
@@ -11,6 +14,9 @@ class GuiDemoScene : public SnackerEngine::Scene
 	SnackerEngine::GuiEventHandle buttonHandle;
 	SnackerEngine::GuiVariableHandle<double> doubleHandle;
 	std::queue<std::string> guiSceneQueue;
+	std::string currentScene;
+	SnackerEngine::GuiVariableHandleFloat variableHandleFloat{ 0.0f };
+	bool toggle = false;
 public:
 
 	/// Helper function that loads the next GuiScene
@@ -33,12 +39,21 @@ public:
 		{
 			SnackerEngine::errorLogger << SnackerEngine::LOGGER::BEGIN << e.what() << SnackerEngine::LOGGER::ENDL;
 		}
+		currentScene = guiSceneQueue.front();
 		guiSceneQueue.push(guiSceneQueue.front());
 		guiSceneQueue.pop();
+		// Setup special functionality for some scenes
+		if (currentScene == "test/animationTest.json") {
+			const auto buttonAnimate = guiManager.getGuiElement<SnackerEngine::GuiButton>("buttonAnimate");
+			if (buttonAnimate) buttonAnimate->setEventHandle(buttonHandle);
+			const auto slider = guiManager.getGuiElement<SnackerEngine::GuiSliderFloat>("slider");
+			if (slider) slider->setVariableHandle(variableHandleFloat);
+		}
 	}
 
 	GuiDemoScene()
 	{
+		guiSceneQueue.push("test/animationTest.json");
 		guiSceneQueue.push("test/normalDebugWindow.json");
 		guiSceneQueue.push("test/gridLayoutTest.json");
 		guiSceneQueue.push("test/testListLayouts.json");
@@ -89,10 +104,40 @@ public:
 	virtual void update(const double& dt) override
 	{
 		guiManager.update(dt);
+
 		if (buttonHandle.isActive()) {
-			SnackerEngine::infoLogger << SnackerEngine::LOGGER::BEGIN <<
-				"Button pressed!!" << SnackerEngine::LOGGER::ENDL;
 			buttonHandle.reset();
+			if (currentScene == "test/animationTest.json") {
+				// Animate panel pos
+				auto guiPanel = guiManager.getGuiElement<SnackerEngine::GuiPanel>("panel");
+				if (!toggle) {
+					if (guiPanel) guiPanel->animatePositionX(guiPanel->getPositionX(), 500, 1.0);
+				}
+				else {
+					if (guiPanel) guiPanel->animatePositionX(guiPanel->getPositionX(), 100, 1.0, SnackerEngine::AnimationFunction::easeInOutExponential);
+				}
+				// Animate slider value
+				auto guiSlider = guiManager.getGuiElement<SnackerEngine::GuiSliderFloat>("slider");
+				if (!toggle) {
+					if (guiSlider) guiSlider->animateValue(guiSlider->getValue(), 0.7f, 0.5, SnackerEngine::AnimationFunction::easeOutElastic);
+				}
+				else {
+					if (guiSlider) guiSlider->animateValue(guiSlider->getValue(), 0.0f, 1.0, SnackerEngine::AnimationFunction::easeOutBounce);
+				}
+				toggle = !toggle;
+			}
+			else {
+				SnackerEngine::infoLogger << SnackerEngine::LOGGER::BEGIN <<
+					"Button pressed!!" << SnackerEngine::LOGGER::ENDL;
+			}
+		}
+		if (variableHandleFloat.isActive()) {
+			variableHandleFloat.reset();
+			if (currentScene == "test/animationTest.json") {	
+				// Set offset percentage of scrolling list layout
+				auto scrollingList = guiManager.getGuiElement<SnackerEngine::GuiVerticalScrollingListLayout>("scrollingList");
+				if (scrollingList) scrollingList->setTotalOffsetPercentage(variableHandleFloat);
+			}
 		}
 	}
 };

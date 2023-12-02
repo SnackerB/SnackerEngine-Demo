@@ -1,0 +1,20 @@
+[
+  {
+    "typeID": "GUI_WINDOW",
+    "size": [ 100, 100 ],
+    "backgroundColor": [ 1.0, 0.0, 0.0, 0.5 ],
+    "position": [ 0, 0 ]
+  },
+  {
+    "typeID": "GUI_WINDOW",
+    "size": [ 100, 100 ],
+    "backgroundColor": [ 1.0, 0.0, 0.0, 0.5 ],
+    "position": [ 200, 200 ]
+  },
+  {
+    "typeID": "GUI_WINDOW",
+    "size": [ 100, 100 ],
+    "backgroundColor": [ 1.0, 0.0, 0.0, 0.5 ],
+    "position": [ 300, 300 ]
+  }
+]

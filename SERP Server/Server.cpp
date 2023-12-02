@@ -4,6 +4,7 @@
 #include <WinSock2.h>
 
 #include "Network\SERP\SERP.h"
+#include "Utility\Formatting.h"
 
 bool SERPServer::isValidSerpID(SnackerEngine::SERPID id)
 {
@@ -77,7 +78,7 @@ void SERPServer::handleRequest(const Client& client, SnackerEngine::HTTPRequest&
 	std::optional<std::string_view> destination = request.getHeaderValue("destinationID");
 	if (destination.has_value()) {
 		// Parse destinationID
-		std::optional<SnackerEngine::SERPID> destinationID = SnackerEngine::parseSERPID(std::string(destination.value()));
+		std::optional<SnackerEngine::SERPID> destinationID = SnackerEngine::from_string<SnackerEngine::SERPID>(std::string(destination.value()));
 		if (!destinationID.has_value()) {
 			// Invalid destinationID
 			sendMessageResponse(client, SnackerEngine::ResponseStatusCode::BAD_REQUEST, "bad request: \"" + std::string(destination.value()) + "\" is not a valid serpID.");
@@ -140,7 +141,7 @@ void SERPServer::handleResponse(const Client& client, SnackerEngine::HTTPRespons
 		std::cout << "bad request : No destination serpID provided in HTTP response." << std::endl;
 		return;
 	}
-	std::optional<SnackerEngine::SERPID> destinationID = SnackerEngine::parseSERPID(std::string(destination.value()));
+	std::optional<SnackerEngine::SERPID> destinationID = SnackerEngine::from_string<SnackerEngine::SERPID>(std::string(destination.value()));
 	if (!destinationID.has_value()) {
 		sendMessageResponse(client, SnackerEngine::ResponseStatusCode::BAD_REQUEST, "bad request: \"" + std::string(destination.value()) + "\" is not a valid serpID.");
 		std::cout << "bad request: \"" << destination.value() << "\" is not a valid serpID." << std::endl;
@@ -177,7 +178,7 @@ void SERPServer::answerSerpIDRequest(const Client& client)
 
 void SERPServer::answerClientExistsRequest(const Client& client, const std::string& requestedClient)
 {
-	auto requestedClientID = SnackerEngine::parseSERPID(requestedClient);
+	auto requestedClientID = SnackerEngine::from_string<SnackerEngine::SERPID>(requestedClient);
 	if (requestedClientID.has_value()) {
 		auto requestedClientIndex = findClientIndex(requestedClientID.value());
 		if (requestedClientIndex.has_value()) {

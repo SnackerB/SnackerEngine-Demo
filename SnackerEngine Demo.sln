@@ -13,6 +13,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Textured Scene", "Textured 
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SERP Server", "SERP Server\SERP Server.vcxproj", "{81600A5F-0608-4911-B20E-90A542EFD178}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Network test", "Network test\Network test.vcxproj", "{DD492AB7-A860-4C9B-85B9-4DFBF90894E1}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -61,6 +63,14 @@ Global
 		{81600A5F-0608-4911-B20E-90A542EFD178}.Release|x64.Build.0 = Release|x64
 		{81600A5F-0608-4911-B20E-90A542EFD178}.Release|x86.ActiveCfg = Release|Win32
 		{81600A5F-0608-4911-B20E-90A542EFD178}.Release|x86.Build.0 = Release|Win32
+		{DD492AB7-A860-4C9B-85B9-4DFBF90894E1}.Debug|x64.ActiveCfg = Debug|x64
+		{DD492AB7-A860-4C9B-85B9-4DFBF90894E1}.Debug|x64.Build.0 = Debug|x64
+		{DD492AB7-A860-4C9B-85B9-4DFBF90894E1}.Debug|x86.ActiveCfg = Debug|Win32
+		{DD492AB7-A860-4C9B-85B9-4DFBF90894E1}.Debug|x86.Build.0 = Debug|Win32
+		{DD492AB7-A860-4C9B-85B9-4DFBF90894E1}.Release|x64.ActiveCfg = Release|x64
+		{DD492AB7-A860-4C9B-85B9-4DFBF90894E1}.Release|x64.Build.0 = Release|x64
+		{DD492AB7-A860-4C9B-85B9-4DFBF90894E1}.Release|x86.ActiveCfg = Release|Win32
+		{DD492AB7-A860-4C9B-85B9-4DFBF90894E1}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -34,21 +34,21 @@ private:
 	};
 	Mode mode = Mode::MAIN_MENU;
 	/// Vector of event handles for gui interactions
-	std::vector<SnackerEngine::GuiEventHandle> eventHandles{};
+	std::vector<SnackerEngine::EventHandle> eventHandles{};
 	/// Edit box for joining chat
 	SnackerEngine::GuiEditBox serpIdEditBox{};
 	/// Pointer to the popup window, if it is active
 	std::unique_ptr<SnackerEngine::GuiElement> popupWindow = nullptr;
 	/// Handle to the ok button of the pipup window
-	SnackerEngine::GuiEventHandle popupOkHandle{};
+	SnackerEngine::EventHandle popupOkHandle{};
 	/// The list layout storing all messages
 	SnackerEngine::GuiVerticalScrollingListLayout chatListLayout{};
 	/// The edit box used for posting messages
 	SnackerEngine::GuiEditBox postEditBox{};
 	/// The event handle for the post button
-	SnackerEngine::GuiEventHandle postHandle{};
+	SnackerEngine::EventHandle postHandle{};
 	/// The event handle for the "post image" buttin
-	SnackerEngine::GuiEventHandle postImageHandle{};
+	SnackerEngine::EventHandle postImageHandle{};
 	/// The color of ougoing/incoming messages
 	static const inline SnackerEngine::Color4f outgoingMessageColor = SnackerEngine::Color4f{0.3f, 0.8f, 0.3f, 1.0f};
 	static const inline SnackerEngine::Color4f incomingMessageColor = SnackerEngine::Color4f{ 0.3f, 0.3f, 0.8f, 1.0f };
@@ -70,15 +70,15 @@ private:
 		{
 			SnackerEngine::GuiButton joinButton("Join Chat");
 			verticalListLayout.registerChild(joinButton);
-			joinButton.setEventHandle(eventHandles[0]);
+			joinButton.subscribeToEventButtonPress(eventHandles[0]);
 			guiManager.moveElement(std::move(joinButton));
 			SnackerEngine::GuiButton hostButton("Host Chat");
 			verticalListLayout.registerChild(hostButton);
-			hostButton.setEventHandle(eventHandles[1]);
+			hostButton.subscribeToEventButtonPress(eventHandles[1]);
 			guiManager.moveElement(std::move(hostButton));
 			SnackerEngine::GuiButton exitButton("Exit");
 			verticalListLayout.registerChild(exitButton);
-			exitButton.setEventHandle(eventHandles[2]);
+			exitButton.subscribeToEventButtonPress(eventHandles[2]);
 			guiManager.moveElement(std::move(exitButton));
 		}
 		guiManager.moveElement(std::move(verticalListLayout));
@@ -100,11 +100,11 @@ private:
 			serpIdEditBox.setEventHandleEnterWasPressed(eventHandles[0]);
 			SnackerEngine::GuiButton joinButton("Join");
 			verticalListLayout.registerChild(joinButton);
-			joinButton.setEventHandle(eventHandles[0]);
+			joinButton.subscribeToEventButtonPress(eventHandles[0]);
 			guiManager.moveElement(std::move(joinButton));
 			SnackerEngine::GuiButton exitButton("Back");
 			verticalListLayout.registerChild(exitButton);
-			exitButton.setEventHandle(eventHandles[1]);
+			exitButton.subscribeToEventButtonPress(eventHandles[1]);
 			guiManager.moveElement(std::move(exitButton));
 		}
 		guiManager.moveElement(std::move(verticalListLayout));
@@ -138,7 +138,7 @@ private:
 				SnackerEngine::GuiButton buttonOk("Ok");
 				buttonOk.setSizeHintModePreferredSize(SnackerEngine::GuiTextBox::SizeHintMode::SET_TO_TEXT_SIZE);
 				verticalListLayout.registerChild(buttonOk);
-				buttonOk.setEventHandle(popupOkHandle);
+				buttonOk.subscribeToEventButtonPress(popupOkHandle);
 				guiManager.moveElement(std::move(buttonOk));
 			}
 			guiManager.moveElement(std::move(verticalListLayout));
@@ -169,12 +169,12 @@ private:
 					SnackerEngine::GuiButton postButton("Post");
 					postButton.setSizeHintModePreferredSize(SnackerEngine::GuiButton::SizeHintMode::SET_TO_TEXT_SIZE);
 					horizontalListLayout.registerChild(postButton);
-					postButton.setEventHandle(postHandle);
+					postButton.subscribeToEventButtonPress(postHandle);
 					guiManager.moveElement(std::move(postButton));
 					SnackerEngine::GuiButton postImageButton("Post Image");
 					postImageButton.setSizeHintModePreferredSize(SnackerEngine::GuiButton::SizeHintMode::SET_TO_TEXT_SIZE);
 					horizontalListLayout.registerChild(postImageButton);
-					postImageButton.setEventHandle(postImageHandle);
+					postImageButton.subscribeToEventButtonPress(postImageHandle);
 					guiManager.moveElement(std::move(postImageButton));
 				}
 				guiManager.moveElement(std::move(horizontalListLayout));
@@ -190,7 +190,7 @@ private:
 				guiManager.moveElement(std::move(title));
 				SnackerEngine::GuiButton backButton("Back to Main Menu");
 				sidebar.registerChild(backButton);
-				backButton.setEventHandle(eventHandles[0]);
+				backButton.subscribeToEventButtonPress(eventHandles[0]);
 				guiManager.moveElement(std::move(backButton));
 			}
 			guiManager.moveElement(std::move(sidebar));

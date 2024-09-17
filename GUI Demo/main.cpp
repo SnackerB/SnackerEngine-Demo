@@ -5,17 +5,20 @@
 #include "Gui\GuiElements\GuiButton.h"
 #include "Gui\GuiElements\GuiSlider.h"
 #include "Gui\Layouts\VerticalScrollingListLayout.h"
+#include "Gui\GuiManager.h"
+
+#include "Utility\Handles\VariableHandle.h"
 
 #include <queue>
 
 class GuiDemoScene : public SnackerEngine::Scene
 {
 	SnackerEngine::GuiManager guiManager;
-	SnackerEngine::GuiEventHandle buttonHandle;
-	SnackerEngine::GuiVariableHandle<double> doubleHandle;
+	SnackerEngine::EventHandle buttonHandle;
+	SnackerEngine::VariableHandle<double> doubleHandle;
 	std::queue<std::string> guiSceneQueue;
 	std::string currentScene;
-	SnackerEngine::GuiVariableHandleFloat variableHandleFloat{ 0.0f };
+	SnackerEngine::VariableHandle<float> variableHandleFloat{ 0.0f };
 	bool toggle = false;
 public:
 
@@ -45,14 +48,15 @@ public:
 		// Setup special functionality for some scenes
 		if (currentScene == "test/animationTest.json") {
 			const auto buttonAnimate = guiManager.getGuiElement<SnackerEngine::GuiButton>("buttonAnimate");
-			if (buttonAnimate) buttonAnimate->setEventHandle(buttonHandle);
+			if (buttonAnimate) buttonAnimate->subscribeToEventButtonPress(buttonHandle);
 			const auto slider = guiManager.getGuiElement<SnackerEngine::GuiSliderFloat>("slider");
-			if (slider) slider->setVariableHandle(variableHandleFloat);
+			if (slider) slider->getVariableHandle().connect(variableHandleFloat);
 		}
 	}
 
 	GuiDemoScene()
 	{
+		guiSceneQueue.push("test/selectionBoxTest.json");
 		guiSceneQueue.push("test/animationTest.json");
 		guiSceneQueue.push("test/normalDebugWindow.json");
 		guiSceneQueue.push("test/gridLayoutTest.json");
@@ -111,18 +115,18 @@ public:
 				// Animate panel pos
 				auto guiPanel = guiManager.getGuiElement<SnackerEngine::GuiPanel>("panel");
 				if (!toggle) {
-					if (guiPanel) guiPanel->animatePositionX(guiPanel->getPositionX(), 500, 1.0);
+					if (guiPanel) guiManager.signUpAnimatable(guiPanel->animatePositionX(guiPanel->getPositionX(), 500, 1.0));
 				}
 				else {
-					if (guiPanel) guiPanel->animatePositionX(guiPanel->getPositionX(), 100, 1.0, SnackerEngine::AnimationFunction::easeInOutExponential);
+					if (guiPanel) guiManager.signUpAnimatable(guiPanel->animatePositionX(guiPanel->getPositionX(), 100, 1.0, SnackerEngine::AnimationFunction::easeInOutExponential));
 				}
 				// Animate slider value
 				auto guiSlider = guiManager.getGuiElement<SnackerEngine::GuiSliderFloat>("slider");
 				if (!toggle) {
-					if (guiSlider) guiSlider->animateValue(guiSlider->getValue(), 0.7f, 0.5, SnackerEngine::AnimationFunction::easeOutElastic);
+					if (guiSlider) guiManager.signUpAnimatable(guiSlider->animateValue(guiSlider->getValue(), 0.7f, 0.5, SnackerEngine::AnimationFunction::easeOutElastic));
 				}
 				else {
-					if (guiSlider) guiSlider->animateValue(guiSlider->getValue(), 0.0f, 1.0, SnackerEngine::AnimationFunction::easeOutBounce);
+					if (guiSlider) guiManager.signUpAnimatable(guiSlider->animateValue(guiSlider->getValue(), 0.0f, 1.0, SnackerEngine::AnimationFunction::easeOutBounce));
 				}
 				toggle = !toggle;
 			}

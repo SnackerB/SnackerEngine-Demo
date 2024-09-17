@@ -47,10 +47,10 @@ class MyScene : public SnackerEngine::Scene
 
 	float objPlanetRotationSpeed;
 
-	SnackerEngine::GuiVariableHandle<bool> isNathanTime;
-	SnackerEngine::GuiVariableHandleFloat nathanSpeed;
-	SnackerEngine::GuiVariableHandleFloat nathanRadius;
-	SnackerEngine::GuiVariableHandleFloat nathanRaveFactor;
+	SnackerEngine::VariableHandle<bool> isNathanTime;
+	SnackerEngine::VariableHandle<float> nathanSpeed;
+	SnackerEngine::VariableHandle<float> nathanRadius;
+	SnackerEngine::VariableHandle<float> nathanRaveFactor;
 
 	// GUI
 	SnackerEngine::GuiManager guiManager;
@@ -107,10 +107,11 @@ public:
 		window.registerChild(scrollingListLayout);
 		{
 			SnackerEngine::GuiHorizontalListLayout tempLayout;
+			tempLayout.setResizeMode(SnackerEngine::GuiElement::ResizeMode::RESIZE_RANGE);
 			scrollingListLayout.registerChild(tempLayout);
 			SnackerEngine::GuiCheckBox nathanTimeCheckBox;
 			tempLayout.registerChild(nathanTimeCheckBox);
-			nathanTimeCheckBox.setBoolHandle(isNathanTime);
+			nathanTimeCheckBox.getVariableHandle().connect(isNathanTime);
 			SnackerEngine::GuiTextBox nathanTimeText(std::string("nathan time"));
 			tempLayout.registerChild(nathanTimeText);
 			guiManager.moveElement(std::move(tempLayout));
@@ -118,37 +119,40 @@ public:
 			guiManager.moveElement(std::move(nathanTimeText));
 
 			tempLayout = SnackerEngine::GuiHorizontalListLayout();
+			tempLayout.setResizeMode(SnackerEngine::GuiElement::ResizeMode::RESIZE_RANGE);
 			tempLayout.setHorizontalLayoutGroupName("A");
 			scrollingListLayout.registerChild(tempLayout);
 			SnackerEngine::GuiTextBox nathanSpeedText(std::string("nathan speed:"));
 			tempLayout.registerChild(nathanSpeedText);
 			SnackerEngine::GuiSlider<float> nathanSpeedSlider(0.0f, 10.0f, 5.0f);
 			tempLayout.registerChild(nathanSpeedSlider);
-			nathanSpeedSlider.setVariableHandle(nathanSpeed);
+			nathanSpeedSlider.getVariableHandle().connect(nathanSpeed);
 			guiManager.moveElement(std::move(tempLayout));
 			guiManager.moveElement(std::move(nathanSpeedText));
 			guiManager.moveElement(std::move(nathanSpeedSlider));
 
 			tempLayout = SnackerEngine::GuiHorizontalListLayout();
+			tempLayout.setResizeMode(SnackerEngine::GuiElement::ResizeMode::RESIZE_RANGE);
 			tempLayout.setHorizontalLayoutGroupName("A");
 			scrollingListLayout.registerChild(tempLayout);
 			SnackerEngine::GuiTextBox nathanRadiusText(std::string("nathan radius"));
 			tempLayout.registerChild(nathanRadiusText);
 			SnackerEngine::GuiSlider<float> nathanRadiusSlider(0.0f, 10.0f, 2.0f);
 			tempLayout.registerChild(nathanRadiusSlider);
-			nathanRadiusSlider.setVariableHandle(nathanRadius);
+			nathanRadiusSlider.getVariableHandle().connect(nathanRadius);
 			guiManager.moveElement(std::move(tempLayout));
 			guiManager.moveElement(std::move(nathanRadiusText));
 			guiManager.moveElement(std::move(nathanRadiusSlider));
 
 			tempLayout = SnackerEngine::GuiHorizontalListLayout();
+			tempLayout.setResizeMode(SnackerEngine::GuiElement::ResizeMode::RESIZE_RANGE);
 			tempLayout.setHorizontalLayoutGroupName("A");
 			scrollingListLayout.registerChild(tempLayout);
 			SnackerEngine::GuiTextBox nathanRaveFactorText(std::string("nathan rave factor"));
 			tempLayout.registerChild(nathanRaveFactorText);
 			SnackerEngine::GuiSlider<float> nathanRaveFactorSlider(0.0f, 1.0f, 0.0f);
 			tempLayout.registerChild(nathanRaveFactorSlider);
-			nathanRaveFactorSlider.setVariableHandle(nathanRaveFactor);
+			nathanRaveFactorSlider.getVariableHandle().connect(nathanRaveFactor);
 			guiManager.moveElement(std::move(tempLayout));
 			guiManager.moveElement(std::move(nathanRaveFactorText));
 			guiManager.moveElement(std::move(nathanRaveFactorSlider));

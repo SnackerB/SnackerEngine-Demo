@@ -1,21 +1,19 @@
 #pragma once
 
 #include "Network\TCP\TCP.h"
-#include "Network\SERP\SERPID.h"
-#include "Network\HTTP\HTTP.h"
+#include "Network\SERP\SERPEndpoint.h"
 
 class Client
 {
 private:
-	/// Each client has a HTTP endpoint
-	SnackerEngine::HTTPEndpoint httpEndpoint;
+	/// Each client has a SERP endpoint
+	SnackerEngine::SERPEndpoint endpoint;
 	/// The SERPID of this client
 	SnackerEngine::SERPID serpID;
 public:
 	Client(SnackerEngine::SocketTCP socket, SnackerEngine::SERPID serpID)
-		: httpEndpoint(std::move(socket), false), serpID(serpID) {}
+		: endpoint(std::move(socket)), serpID(serpID) {}
 	/// Getters
 	SnackerEngine::SERPID getSerpID() const { return serpID; }
-	SnackerEngine::HTTPEndpoint& getEndpoint() { return httpEndpoint; }
-	const SnackerEngine::HTTPEndpoint& getEndpoint() const { return httpEndpoint; }
+	SnackerEngine::SERPEndpoint& getEndpoint() { return endpoint; }
 };

@@ -1,0 +1,40 @@
+[
+  {
+    "typeID": "GUI_WINDOW",
+    "size": [ 100, 100 ],
+    "backgroundColor": [ 1.0, 0.0, 0.0, 0.5 ],
+    "position": [ 0, 0 ]
+  },
+  {
+    "typeID": "GUI_WINDOW",
+    "size": [ 100, 100 ],
+    "children": [
+      {
+        "position": [100, 100],
+        "typeID": "GUI_SELECTION_BOX",
+        "options": [
+          "option 1",
+          "option 2",
+          "option 3",
+          "This is a very long option."
+        ]
+      }
+    ]
+  },
+  {
+    "typeID": "GUI_WINDOW",
+    "size": [ 100, 100 ],
+    "children": [
+      {
+        "typeID": "GUI_SELECTION_BOX",
+        "position": [ 100, 100 ],
+        "options": [
+          "option 1",
+          "option 2",
+          "option 3",
+          "This is a very long option."
+        ]
+      }
+    ]
+  }
+]

@@ -4,8 +4,8 @@
 
 #include "Client.h"
 #include "Utility\Buffer.h"
-#include "Network\HTTP\Request.h"
-#include "Network\HTTP\Response.h"
+#include "Network\SERP\SERP.h"
+#include "Network\SERP\SERPEndpoint.h"
 
 class SERPServer
 {
@@ -31,28 +31,28 @@ private:
 	/// Receives a message from the given socket
 	void handleIncomingMessage(Client& client);
 	/// Handles an incoming HTTP Request
-	void handleRequest(const Client& client, SnackerEngine::HTTPRequest& request);
+	void handleRequest(Client& client, SnackerEngine::SERPRequest& request);
 	/// Handles an incoming HTTP Request that is directed at the server as per SERP protocol
-	void handleRequestToServer(const Client& client, SnackerEngine::HTTPRequest& request);
+	void handleRequestToServer(Client& client, SnackerEngine::SERPRequest& request);
 	/// Handles an incoming HTTP Response
-	void handleResponse(const Client& client, SnackerEngine::HTTPResponse& response);
+	void handleResponse(Client& client, SnackerEngine::SERPResponse& response);
 	/// Finds the index to the client with the given serpID, if it exists
 	std::optional<std::size_t> findClientIndex(SnackerEngine::SERPID serpID);
 	/// Answers a ping request of the given client
-	void answerPingRequest(const Client& client);
+	void answerPingRequest(const SnackerEngine::SERPRequest& request, Client& client);
 	/// Answers a serpID request of the given client
-	void answerSerpIDRequest(const Client& client);
+	void answerSerpIDRequest(const SnackerEngine::SERPRequest& request, Client& client);
 	/// Answers a doesClientExist request from the given client. The serpID of the requested client
 	/// is given as a string
-	void answerClientExistsRequest(const Client& client, const std::string& requestedClient);
+	void answerClientExistsRequest(const SnackerEngine::SERPRequest& request, Client& client, const std::string& requestedClient);
 	/// Sends a response with the given status code and a string in the message body to the given socket
-	void sendMessageResponse(const Client& client, SnackerEngine::ResponseStatusCode responseStatusCode, const std::string& message);
+	void sendMessageResponse(const SnackerEngine::SERPRequest& request, Client& client, SnackerEngine::ResponseStatusCode responseStatusCode, const std::string& message);
 	/// Checks if the given message is ok to relay, and changes the header structure accordingly
-	bool prepareForRelay(const Client& source, SnackerEngine::HTTPMessage& message);
+	bool prepareForRelay(SnackerEngine::SERPMessage& message, Client& source);
 	/// Relays the HTTP request from the source client to the destination client
-	void relayRequest(const Client& source, const Client& destination, SnackerEngine::HTTPRequest& request);
+	void relayRequest(Client& source, Client& destination, SnackerEngine::SERPRequest& request);
 	/// Relays the HTTP response from the source client to the destination client
-	void relayResponse(const Client& source, const Client& destination, SnackerEngine::HTTPResponse& response);
+	void relayResponse(Client& source, Client& destination, SnackerEngine::SERPResponse& response);
 public:
 	/// Constructor
 	SERPServer();

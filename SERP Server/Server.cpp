@@ -3,7 +3,9 @@
 #include <iostream>
 #include <WinSock2.h>
 
+#include "Network\SERP\SERPEndpoint.h"
 #include "Network\SERP\SERP.h"
+#include "Network\SERP\SERPID.h"
 #include "Utility\Formatting.h"
 
 bool SERPServer::isValidSerpID(SnackerEngine::SERPID id)
@@ -18,8 +20,8 @@ bool SERPServer::isValidSerpID(SnackerEngine::SERPID id)
 void SERPServer::connectNewClient(SnackerEngine::SocketTCP socket)
 {
 	// First we check if a client with the given address alredy has connected
-	for (const auto& client : clients) {
-		if (SnackerEngine::compare(client.getEndpoint().getSocket().addr, socket.addr)) {
+	for (auto& client : clients) {
+		if (SnackerEngine::compare(client.getEndpoint().getTCPEndpoint().getSocket().addr, socket.addr)) {
 			std::cout << "client already exists!" << std::endl;
 			return;
 		}
@@ -35,8 +37,8 @@ void SERPServer::connectNewClient(SnackerEngine::SocketTCP socket)
 	}
 	if (success) {
 		clients.push_back(Client(std::move(socket), serpID));
-		pollFileDescriptors.push_back(pollfd(clients.back().getEndpoint().getSocket().sock, POLLRDNORM, NULL));
-		SnackerEngine::setToNonBlocking(clients.back().getEndpoint().getSocket());
+		pollFileDescriptors.push_back(pollfd(clients.back().getEndpoint().getTCPEndpoint().getSocket().sock, POLLRDNORM, NULL));
+		SnackerEngine::setToNonBlocking(clients.back().getEndpoint().getTCPEndpoint().getSocket());
 		std::cout << "new client has connected!" << std::endl;
 	}
 }
@@ -51,111 +53,74 @@ void SERPServer::disconnectClient(unsigned index)
 
 void SERPServer::handleIncomingMessage(Client& client)
 {
-	auto result = client.getEndpoint().receiveMessages(0.0);
-	if (result.empty()) sendMessageResponse(client, SnackerEngine::ResponseStatusCode::BAD_REQUEST, "HTTP version not supported or invalid message format!");
-	for (const auto& message : result) {
-		switch (message->getMessageType())
-		{
-		case SnackerEngine::HTTPMessage::MessageType::REQUEST:
-		{
-			SnackerEngine::HTTPRequest& request = static_cast<SnackerEngine::HTTPRequest&>(*message);
-			handleRequest(client, request);
+	auto result = client.getEndpoint().receiveMessages();
+	for (auto& message : result) {
+		if (message->isRequest()) {
+			handleRequest(client, static_cast<SnackerEngine::SERPRequest&>(*message));
 			break;
 		}
-		case SnackerEngine::HTTPMessage::MessageType::RESPONSE:
-		{
-			SnackerEngine::HTTPResponse& response = static_cast<SnackerEngine::HTTPResponse&>(*message);
-			handleResponse(client, response);
+		else {
+			handleResponse(client, static_cast<SnackerEngine::SERPResponse&>(*message));
 			break;
-		}
 		}
 	}
 }
 
-void SERPServer::handleRequest(const Client& client, SnackerEngine::HTTPRequest& request)
+void SERPServer::handleRequest(Client& client, SnackerEngine::SERPRequest& request)
 {
-	// Look if a destination SERPID is given
-	std::optional<std::string_view> destination = request.getHeaderValue("destinationID");
-	if (destination.has_value()) {
-		// Parse destinationID
-		std::optional<SnackerEngine::SERPID> destinationID = SnackerEngine::from_string<SnackerEngine::SERPID>(std::string(destination.value()));
-		if (!destinationID.has_value()) {
-			// Invalid destinationID
-			sendMessageResponse(client, SnackerEngine::ResponseStatusCode::BAD_REQUEST, "bad request: \"" + std::string(destination.value()) + "\" is not a valid serpID.");
-			std::cout << "bad request: \"" << destination.value() << "\" is not a valid serpID." << std::endl;;
-		}
-		else if (destinationID.value() == 0) {
-			// The message is directed at the server!
-			handleRequestToServer(client, request);
-		}
-		else {
-			// Check if the given client is connected
-			std::optional<std::size_t> clientIndex = findClientIndex(destinationID.value());
-			if (!clientIndex.has_value()) {
-				sendMessageResponse(client, SnackerEngine::ResponseStatusCode::NOT_FOUND, "no client with serpID " + std::string(destination.value()) + " is currently connected.");
-				std::cout << "no client with serpID " << destination.value() << " is currently connected." << std::endl;
-			}
-			else {
-				std::cout << "relaying request to " << destinationID.value() << "!" << std::endl;
-				relayRequest(client, clients[clientIndex.value()], request);
-			}
-		}
-	}
-	else {
+	if (request.getHeader().destination == 0) {
 		// The message is directed at the server!
 		handleRequestToServer(client, request);
 	}
+	else {
+		// Check if the given client is connected
+		std::optional<std::size_t> clientIndex = findClientIndex(request.getHeader().destination);
+		if (!clientIndex.has_value()) {
+			sendMessageResponse(request, client, SnackerEngine::ResponseStatusCode::NOT_FOUND, "no client with serpID " + SnackerEngine::to_string(request.getHeader().destination) + " is currently connected.");
+			std::cout << "no client with serpID " << request.getHeader().destination << " is currently connected." << std::endl;
+		}
+		else {
+			std::cout << "relaying request to " << request.getHeader().destination << "!" << std::endl;
+			relayRequest(client, clients[clientIndex.value()], request);
+		}
+	}
 }
 
-void SERPServer::handleRequestToServer(const Client& client, SnackerEngine::HTTPRequest& request)
+void SERPServer::handleRequestToServer(Client& client, SnackerEngine::SERPRequest& request)
 {
-	std::vector<std::string> path = request.splitPath();
-	if (path.size() <= 2 && request.requestMethod == request.HTTP_GET) {
+	std::vector<std::string> path = SnackerEngine::SERPRequest::splitTargetPath(request.target);
+	if (path.size() <= 2 && request.getRequestStatusCode() == SnackerEngine::RequestStatusCode::GET) {
 		if (path.back() == "ping") {
-			answerPingRequest(client);
+			answerPingRequest(request, client);
 			std::cout << "ping request detected!" << std::endl;
 			return;
 		}
 		else if (path.back() == "serpID") {
-			answerSerpIDRequest(client);
+			answerSerpIDRequest(request, client);
 			std::cout << "serpID request detected!" << std::endl;
 			return;
 		}
 		else if (path.size() == 2 && path[0] == "clients") {
-			answerClientExistsRequest(client, path[1]);
+			answerClientExistsRequest(request, client, path[1]);
 			std::cout << "client exists request detected!" << std::endl;
 			return;
 		}
 	}
-	sendMessageResponse(client, SnackerEngine::ResponseStatusCode::BAD_REQUEST, "bad request: \"" + request.path + "\"");
-	std::cout << "bad request: \"" << request.path << "\"" << std::endl;
+	sendMessageResponse(request, client, SnackerEngine::ResponseStatusCode::NOT_FOUND, ("Did not find target \"" + request.target + "\""));
+	std::cout << "Did not find target \"" << request.target << "\"" << std::endl;
 }
 
-void SERPServer::handleResponse(const Client& client, SnackerEngine::HTTPResponse& response)
+void SERPServer::handleResponse(Client& client, SnackerEngine::SERPResponse& response)
 {
-	// Look at the header structure if the response is valid. If it is valid, there should be a header 'destination' with the+
-	// SerpID of the destination client
-	std::optional<std::string_view> destination = response.getHeaderValue("destinationID");
-	if (!destination.has_value()) {
-		sendMessageResponse(client, SnackerEngine::ResponseStatusCode::BAD_REQUEST, "bad request: No destination serpID provided in HTTP response.");
-		std::cout << "bad request : No destination serpID provided in HTTP response." << std::endl;
-		return;
-	}
-	std::optional<SnackerEngine::SERPID> destinationID = SnackerEngine::from_string<SnackerEngine::SERPID>(std::string(destination.value()));
-	if (!destinationID.has_value()) {
-		sendMessageResponse(client, SnackerEngine::ResponseStatusCode::BAD_REQUEST, "bad request: \"" + std::string(destination.value()) + "\" is not a valid serpID.");
-		std::cout << "bad request: \"" << destination.value() << "\" is not a valid serpID." << std::endl;
-		return;
-	}
 	// Check if the given client is connected
-	std::optional<std::size_t> clientIndex = findClientIndex(destinationID.value());
+	std::optional<std::size_t> clientIndex = findClientIndex(response.getHeader().destination);
 	if (!clientIndex.has_value()) {
-		sendMessageResponse(client, SnackerEngine::ResponseStatusCode::NOT_FOUND, "no client with serpID " + std::string(destination.value()) + " is currently connected.");
-		std::cout << "no client with serpID " << destination.value() << " is currently connected." << std::endl;
-		return;
+		std::cout << "no client with serpID " << response.getHeader().destination << " is currently connected." << std::endl;
 	}
-	std::cout << "relaying response to " << destination.value() << "!" << std::endl;
-	relayResponse(client, clients[clientIndex.value()], response);
+	else {
+		std::cout << "relaying response to " << response.getHeader().destination << "!" << std::endl;
+		relayResponse(client, clients[clientIndex.value()], response);
+	}
 }
 
 std::optional<std::size_t> SERPServer::findClientIndex(SnackerEngine::SERPID serpID)
@@ -166,68 +131,63 @@ std::optional<std::size_t> SERPServer::findClientIndex(SnackerEngine::SERPID ser
 	return {};
 }
 
-void SERPServer::answerPingRequest(const Client& client)
+void SERPServer::answerPingRequest(const SnackerEngine::SERPRequest& request, Client& client)
 {
-	sendMessageResponse(client, SnackerEngine::ResponseStatusCode::OK, "");
+	sendMessageResponse(request, client, SnackerEngine::ResponseStatusCode::OK, "");
 }
 
-void SERPServer::answerSerpIDRequest(const Client& client)
+void SERPServer::answerSerpIDRequest(const SnackerEngine::SERPRequest& request, Client& client)
 {
-	sendMessageResponse(client, SnackerEngine::ResponseStatusCode::OK, SnackerEngine::to_string(client.getSerpID()));
+	sendMessageResponse(request, client, SnackerEngine::ResponseStatusCode::OK, SnackerEngine::to_string(client.getSerpID()));
 }
 
-void SERPServer::answerClientExistsRequest(const Client& client, const std::string& requestedClient)
+void SERPServer::answerClientExistsRequest(const SnackerEngine::SERPRequest& request, Client& client, const std::string& requestedClient)
 {
 	auto requestedClientID = SnackerEngine::from_string<SnackerEngine::SERPID>(requestedClient);
 	if (requestedClientID.has_value()) {
 		auto requestedClientIndex = findClientIndex(requestedClientID.value());
 		if (requestedClientIndex.has_value()) {
-			sendMessageResponse(client, SnackerEngine::ResponseStatusCode::OK, "");
+			sendMessageResponse(request, client, SnackerEngine::ResponseStatusCode::OK, "");
 		}
 		else {
-			sendMessageResponse(client, SnackerEngine::ResponseStatusCode::NOT_FOUND, "no client with serpID " + requestedClient + " is currently connected!");
+			sendMessageResponse(request, client, SnackerEngine::ResponseStatusCode::NOT_FOUND, "no client with serpID " + requestedClient + " is currently connected!");
 		}
 	}
 	else {
-		sendMessageResponse(client, SnackerEngine::ResponseStatusCode::BAD_REQUEST, "\"" + requestedClient + "\" is not a valid SerpID!");
+		sendMessageResponse(request, client, SnackerEngine::ResponseStatusCode::BAD_REQUEST, "\"" + requestedClient + "\" is not a valid SerpID!");
 	}
 }
 
-void SERPServer::sendMessageResponse(const Client& client, SnackerEngine::ResponseStatusCode responseStatusCode, const std::string& message)
+void SERPServer::sendMessageResponse(const SnackerEngine::SERPRequest& request, Client& client, SnackerEngine::ResponseStatusCode responseStatusCode, const std::string& message)
 {
-	SnackerEngine::SERPResponse response(0, client.getSerpID(), 
-		SnackerEngine::HTTPResponse(responseStatusCode, {}, message));
-	SnackerEngine::sendResponse(client.getEndpoint().getSocket(), response.response);
+	SnackerEngine::SERPResponse response(request, responseStatusCode, SnackerEngine::Buffer(message));
+	client.getEndpoint().sendMessage(response);
 }
 
-bool SERPServer::prepareForRelay(const Client& source, SnackerEngine::HTTPMessage& message)
+bool SERPServer::prepareForRelay(SnackerEngine::SERPMessage& message, Client& source)
 {
-	std::optional<std::string_view> sourceSerpID = message.getHeaderValue("sourceID");
-	if (sourceSerpID.has_value()) {
-		// Check if the source is correct
-		if (sourceSerpID.value() != SnackerEngine::to_string(source.getSerpID())) {
-			sendMessageResponse(source, SnackerEngine::ResponseStatusCode::BAD_REQUEST, "Attempted to relay message but gave incorrect serpID as source!");
-			return false;
+	// Check if the source is correct
+	if (message.getHeader().source != source.getSerpID()) {
+		if (message.isRequest()) {
+			sendMessageResponse(static_cast<SnackerEngine::SERPRequest&>(message), source, SnackerEngine::ResponseStatusCode::BAD_REQUEST, "Attempted to relay message but gave incorrect serpID as source!");
 		}
-	}
-	else {
-		message.headers.push_back(SnackerEngine::HTTPHeader("sourceID", SnackerEngine::to_string(source.getSerpID())));
+		return false;
 	}
 	return true;
 }
 
-void SERPServer::relayRequest(const Client& source, const Client& destination, SnackerEngine::HTTPRequest& request)
+void SERPServer::relayRequest(Client& source, Client& destination, SnackerEngine::SERPRequest& request)
 {
-	if (!prepareForRelay(source, request)) return;
+	if (!prepareForRelay(static_cast<SnackerEngine::SERPMessage&>(request), source)) return;
 	// Relay message
-	SnackerEngine::sendRequest(destination.getEndpoint().getSocket(), request);
+	destination.getEndpoint().sendMessage(request, false);
 }
 
-void SERPServer::relayResponse(const Client& source, const Client& destination, SnackerEngine::HTTPResponse& response)
+void SERPServer::relayResponse(Client& source, Client& destination, SnackerEngine::SERPResponse& response)
 {
-	if (!prepareForRelay(source, response)) return;
+	if (!prepareForRelay(response, source)) return;
 	// Relay message
-	SnackerEngine::sendResponse(destination.getEndpoint().getSocket(), response);
+	destination.getEndpoint().sendMessage(response, false);
 }
 
 SERPServer::SERPServer()

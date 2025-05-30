@@ -18,12 +18,19 @@
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Server.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Client.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="resources\gui\mainMenu.json" />
-    <None Include="resources\gui\chatRoomHost.json" />
-    <None Include="resources\gui\chatRoomJoin.json" />
-    <None Include="resources\gui\guiStyle.json" />
-    <None Include="resources\gui\textMessage.json" />
+    <ClInclude Include="Server.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Client.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

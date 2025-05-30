@@ -1,0 +1,7 @@
+{
+  "fontSize": "fontSizeNormal",
+  "backgroundColor": [ 0.1, 0.1, 0.1, 1.0 ],
+  "parseMode": "WORD_BY_WORD",
+  "sizeHintModePreferredSize": "SET_TO_TEXT_SIZE",
+  "sizeHintModeMinSize": "ARBITRARY"
+}

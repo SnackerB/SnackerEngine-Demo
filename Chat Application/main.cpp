@@ -1,553 +1,254 @@
-#include <iostream>
-
-#include "SERP\SerpManager.h"
-#include "Network\SERP\SERPID.h"
+#include "SnackerEngine\Core\Scene.h"
+#include "SnackerEngine\Core\Engine.h"
+#include "SnackerEngine\Core\Log.h"
+#include "SnackerEngine\Graphics\Renderer.h"
+#include "SnackerEngine\AssetManager\AssetManager.h"
 #include "Network\Network.h"
-
-#include "Core/Scene.h"
-#include "Gui/GuiManager.h"
-#include "Core/Engine.h"
-#include "Graphics/Renderer.h"
-#include "Graphics/TextureDataBuffer.h"
-#include "AssetManager/TextureManager.h"
-
-#include "Gui/Layouts/PositioningLayout.h"
-#include "Gui/Layouts/HorizontalListLayout.h"
-#include "Gui/Layouts/VerticalListLayout.h"
-#include "Gui/Layouts/HorizontalWeightedLayout.h"
-#include "Gui/Layouts/VerticalScrollingListLayout.h"
-#include "Gui/GuiElements/GuiTextBox.h"
-#include "Gui/GuiElements/GuiEditBox.h"
-#include "Gui/GuiElements/GuiButton.h"
-#include "Gui/GuiElements/GuiImage.h"
+#include "SnackerEngine\Gui\GuiManager.h"
+#include "Utility\Json.h"
+#include "Gui\GuiElements\GuiEditVariable.h"
+#include "Network\SERP\SERPID.h"
+#include "Gui\GuiElements\GuiButton.h"
+#include "Gui\Layouts\VerticalScrollingListLayout.h"
+#include "SERP\SerpManager.h"
+#include "Core\Log.h"
 
 class ChatScene : public SnackerEngine::Scene
 {
 private:
+	// Guimanager
 	SnackerEngine::GuiManager guiManager{};
+	// SERPManager
 	SnackerEngine::SERPManager serpManager{};
-	enum class Mode {
+	// Mode we're currently in
+	enum Mode {
 		MAIN_MENU,
-		JOIN_MENU,
-		CHAT_HOST,
-		CHAT_JOIN,
+		HOST,
+		JOIN
 	};
-	Mode mode = Mode::MAIN_MENU;
-	/// Vector of event handles for gui interactions
-	std::vector<SnackerEngine::EventHandle> eventHandles{};
-	/// Edit box for joining chat
-	SnackerEngine::GuiEditBox serpIdEditBox{};
-	/// Pointer to the popup window, if it is active
-	std::unique_ptr<SnackerEngine::GuiElement> popupWindow = nullptr;
-	/// Handle to the ok button of the pipup window
-	SnackerEngine::EventHandle popupOkHandle{};
-	/// The list layout storing all messages
-	SnackerEngine::GuiVerticalScrollingListLayout chatListLayout{};
-	/// The edit box used for posting messages
-	SnackerEngine::GuiEditBox postEditBox{};
-	/// The event handle for the post button
-	SnackerEngine::EventHandle postHandle{};
-	/// The event handle for the "post image" buttin
-	SnackerEngine::EventHandle postImageHandle{};
-	/// The color of ougoing/incoming messages
-	static const inline SnackerEngine::Color4f outgoingMessageColor = SnackerEngine::Color4f{0.3f, 0.8f, 0.3f, 1.0f};
-	static const inline SnackerEngine::Color4f incomingMessageColor = SnackerEngine::Color4f{ 0.3f, 0.3f, 0.8f, 1.0f };
-	/// The pending response object for all requests to the server
-	std::unique_ptr<SnackerEngine::SERPManager::PendingResponse> pendingResponse = nullptr;
-	/// The SerpID of the host (if in join mode)
-	SnackerEngine::SERPID hostID;
-	/// The SerpIDs of all clients (if in host mode)
-	std::vector<SnackerEngine::SERPID> clientIDs;
-
-	void initializeMainMenu() {
-		mode = Mode::MAIN_MENU;
-		// Build GUI
-		guiManager.clear();
-		eventHandles.resize(3);
-		SnackerEngine::GuiVerticalListLayout verticalListLayout;
-		verticalListLayout.setAlignmentVertical(SnackerEngine::AlignmentVertical::CENTER);
-		guiManager.registerElement(verticalListLayout);
-		{
-			SnackerEngine::GuiButton joinButton("Join Chat");
-			verticalListLayout.registerChild(joinButton);
-			joinButton.subscribeToEventButtonPress(eventHandles[0]);
-			guiManager.moveElement(std::move(joinButton));
-			SnackerEngine::GuiButton hostButton("Host Chat");
-			verticalListLayout.registerChild(hostButton);
-			hostButton.subscribeToEventButtonPress(eventHandles[1]);
-			guiManager.moveElement(std::move(hostButton));
-			SnackerEngine::GuiButton exitButton("Exit");
-			verticalListLayout.registerChild(exitButton);
-			exitButton.subscribeToEventButtonPress(eventHandles[2]);
-			guiManager.moveElement(std::move(exitButton));
-		}
-		guiManager.moveElement(std::move(verticalListLayout));
-	}
-
-	void initializeJoinMenu() {
-		mode = Mode::JOIN_MENU;
-		// Build GUI
-		guiManager.clear();
-		eventHandles.resize(2);
-		SnackerEngine::GuiVerticalListLayout verticalListLayout;
-		verticalListLayout.setAlignmentVertical(SnackerEngine::AlignmentVertical::CENTER);
-		guiManager.registerElement(verticalListLayout);
-		{
-			serpIdEditBox = SnackerEngine::GuiEditBox{};
-			serpIdEditBox.setAlignment(SnackerEngine::StaticText::Alignment::CENTER);
-			serpIdEditBox.setText("0000");
-			verticalListLayout.registerChild(serpIdEditBox);
-			serpIdEditBox.setEventHandleEnterWasPressed(eventHandles[0]);
-			SnackerEngine::GuiButton joinButton("Join");
-			verticalListLayout.registerChild(joinButton);
-			joinButton.subscribeToEventButtonPress(eventHandles[0]);
-			guiManager.moveElement(std::move(joinButton));
-			SnackerEngine::GuiButton exitButton("Back");
-			verticalListLayout.registerChild(exitButton);
-			exitButton.subscribeToEventButtonPress(eventHandles[1]);
-			guiManager.moveElement(std::move(exitButton));
-		}
-		guiManager.moveElement(std::move(verticalListLayout));
-	}
-
-	/// Loads up a popup window with the given message and an ok button to close it again
-	void buildPopup(const std::string& message) {
-		popupWindow = std::make_unique<SnackerEngine::GuiPanel>(
-			SnackerEngine::Vec2i(), SnackerEngine::Vec2i(),
-			SnackerEngine::GuiElement::ResizeMode::SAME_AS_PARENT,
-			SnackerEngine::Color4f{ 0.0f, 0.0f, 0.0f, 0.4f });
-		guiManager.registerElement(*popupWindow);
-		SnackerEngine::GuiPositioningLayout positioningLayout(SnackerEngine::GuiPositioningLayout::Mode::CENTER);
-		popupWindow->registerChild(positioningLayout);
-		{
-			SnackerEngine::GuiVerticalListLayout verticalListLayout{};
-			verticalListLayout.setAlignmentVertical(SnackerEngine::AlignmentVertical::CENTER);
-			verticalListLayout.setShrinkHeightToChildren(true);
-			verticalListLayout.setShrinkWidthToChildren(true);
-			verticalListLayout.setResizeMode(SnackerEngine::GuiElement::ResizeMode::RESIZE_RANGE);
-			verticalListLayout.setBackgroundColor(SnackerEngine::Color4f{ 0.2f, 0.2f, 0.2f, 1.0f });
-			verticalListLayout.setDefaultAlignmentHorizontal(SnackerEngine::AlignmentHorizontal::CENTER);
-			verticalListLayout.setHorizontalBorder(SnackerEngine::GuiElement::defaultBorderNormal);
-			verticalListLayout.setVerticalBorder(SnackerEngine::GuiElement::defaultBorderNormal);
-			positioningLayout.registerChild(verticalListLayout);
-			{
-				SnackerEngine::GuiTextBox messageBox(message);
-				messageBox.setAlignment(SnackerEngine::StaticText::Alignment::CENTER);
-				verticalListLayout.registerChild(messageBox);
-				guiManager.moveElement(std::move(messageBox));
-				SnackerEngine::GuiButton buttonOk("Ok");
-				buttonOk.setSizeHintModePreferredSize(SnackerEngine::GuiTextBox::SizeHintMode::SET_TO_TEXT_SIZE);
-				verticalListLayout.registerChild(buttonOk);
-				buttonOk.subscribeToEventButtonPress(popupOkHandle);
-				guiManager.moveElement(std::move(buttonOk));
-			}
-			guiManager.moveElement(std::move(verticalListLayout));
-		}
-		guiManager.moveElement(std::move(positioningLayout));
-	}
-	
-	/// Constructs the general chatroom GUI, with the message displayed at the top of the sidebar
-	void buildChatRoom(const std::string& sideBarTitle) {
-		guiManager.clear();
-		eventHandles.resize(1);
-		SnackerEngine::GuiHorizontalWeightedLayout horizontalWeightedLayout{};
-		horizontalWeightedLayout.setAllowMoveBorders(true);
-		guiManager.registerElement(horizontalWeightedLayout);
-		{
-			SnackerEngine::GuiVerticalListLayout verticalListLayout{};
-			horizontalWeightedLayout.registerChild(verticalListLayout, 0.8f);
-			{
-				chatListLayout = SnackerEngine::GuiVerticalScrollingListLayout{};
-				verticalListLayout.registerChild(chatListLayout);
-				SnackerEngine::GuiHorizontalListLayout horizontalListLayout{};
-				horizontalListLayout.setShrinkHeightToChildren(true);
-				verticalListLayout.registerChild(horizontalListLayout);
-				{
-					postEditBox = SnackerEngine::GuiEditBox{};
-					horizontalListLayout.registerChild(postEditBox);
-					postEditBox.setEventHandleEnterWasPressed(postHandle);
-					SnackerEngine::GuiButton postButton("Post");
-					postButton.setSizeHintModePreferredSize(SnackerEngine::GuiButton::SizeHintMode::SET_TO_TEXT_SIZE);
-					horizontalListLayout.registerChild(postButton);
-					postButton.subscribeToEventButtonPress(postHandle);
-					guiManager.moveElement(std::move(postButton));
-					SnackerEngine::GuiButton postImageButton("Post Image");
-					postImageButton.setSizeHintModePreferredSize(SnackerEngine::GuiButton::SizeHintMode::SET_TO_TEXT_SIZE);
-					horizontalListLayout.registerChild(postImageButton);
-					postImageButton.subscribeToEventButtonPress(postImageHandle);
-					guiManager.moveElement(std::move(postImageButton));
-				}
-				guiManager.moveElement(std::move(horizontalListLayout));
-			}
-			guiManager.moveElement(std::move(verticalListLayout));
-			SnackerEngine::GuiVerticalScrollingListLayout sidebar{};
-			sidebar.setHorizontalBorder(SnackerEngine::GuiElement::defaultBorderNormal);
-			sidebar.setBackgroundColor(SnackerEngine::Color4f{ 0.3f, 0.3f, 0.3f, 1.0f });
-			horizontalWeightedLayout.registerChild(sidebar, 0.2f);
-			{
-				SnackerEngine::GuiTextBox title(sideBarTitle);
-				sidebar.registerChild(title);
-				guiManager.moveElement(std::move(title));
-				SnackerEngine::GuiButton backButton("Back to Main Menu");
-				sidebar.registerChild(backButton);
-				backButton.subscribeToEventButtonPress(eventHandles[0]);
-				guiManager.moveElement(std::move(backButton));
-			}
-			guiManager.moveElement(std::move(sidebar));
-		}
-		guiManager.moveElement(std::move(horizontalWeightedLayout));
-	}
-
-	void initializeChatHostMenu() {
-		mode = Mode::CHAT_HOST;
-		// Subscribe to request path
-		serpManager.registerPathForIncomingRequests("messages");
-		serpManager.registerPathForIncomingRequests("clients");
-		// Build GUI
-		buildChatRoom("Hosting Room " + SnackerEngine::to_string(serpManager.getSerpID()));
-	}
-
-	void initializeChatJoinMenu() {
-		mode = Mode::CHAT_JOIN;
-		// Subscribe to request paths
-		serpManager.registerPathForIncomingRequests("messages");
-		// Build GUI
-		buildChatRoom("Joined Room " + SnackerEngine::to_string(hostID));
-	}
-
-	void handleUpdateMainMenu() {
-		if (eventHandles[0].isActive()) {
-			eventHandles[0].reset();
-			initializeJoinMenu();
-		}
-		else if (eventHandles[1].isActive()) {
-			eventHandles[1].reset();
-			if (!serpManager.isConnectedToSERPServer()) {
-				buildPopup("Not connected to SERP server!");
-			}
-			else {
-				initializeChatHostMenu();
-			}
-		}
-		else if (eventHandles[2].isActive()) {
-			eventHandles[2].reset();
-			SnackerEngine::Engine::stopEngine();
-		}
-	}
-
-	void handleUpdateJoinMenu() {
-		if (eventHandles[0].isActive()) {
-			eventHandles[0].reset();
-			if (!serpManager.isConnectedToSERPServer()) {
-				buildPopup("Not connected to SERP server!");
-			}
-			else {
-				// Parse serpID
-				auto serpID = SnackerEngine::parseSERPID(serpIdEditBox.getText());
-				if (!serpID.has_value() || serpID.value() == 0) {
-					buildPopup("Invalid serpID!");
-				}
-				else {
-					if (!pendingResponse) {
-						pendingResponse = std::make_unique<SnackerEngine::SERPManager::PendingResponse>(
-							serpManager.sendRequest(SnackerEngine::SERPRequest(
-								serpManager.getSerpID(), serpID.value(),
-								SnackerEngine::HTTPRequest(SnackerEngine::HTTPRequest::HTTP_POST, "/clients", {}))));
-						hostID = serpID.value();
-					}
-				}
-			}
-		}
-		else if (eventHandles[1].isActive()) {
-			initializeMainMenu();
-			pendingResponse = nullptr;
-			eventHandles[1].reset();
-		}
-		// Check for response or timeout
-		if (pendingResponse && pendingResponse->getStatus() != SnackerEngine::SERPManager::PendingResponse::Status::PENDING) {
-			if (pendingResponse->getStatus() == SnackerEngine::SERPManager::PendingResponse::Status::OBTAINED) {
-				if (pendingResponse->getResponse().response.responseStatusCode == SnackerEngine::ResponseStatusCode::OK &&
-					pendingResponse->getResponse().getSource() == hostID) {
-					initializeChatJoinMenu();
-				}
-				else {
-					buildPopup("Could not find host!");
-				}
-			}
-			else if (pendingResponse->getStatus() == SnackerEngine::SERPManager::PendingResponse::Status::TIMEOUT) {
-				buildPopup("timeout when waiting for response!");
-			}
-			pendingResponse = nullptr;
-		}
-	}
-
-	void postMessage(const std::string& message, bool incoming = true) {
-		SnackerEngine::GuiTextBox chatMessage;
-		chatMessage.setParseMode(SnackerEngine::StaticText::ParseMode::WORD_BY_WORD);
-		chatMessage.setText(message.empty() ? "   " : message);
-		chatMessage.setSizeHintModePreferredSize(SnackerEngine::GuiTextBox::SizeHintMode::SET_TO_TEXT_SIZE);
-		chatMessage.setSizeHintModeMinSize(SnackerEngine::GuiTextBox::SizeHintMode::SET_TO_TEXT_HEIGHT);
-		if (incoming) {
-			chatMessage.setAlignment(SnackerEngine::StaticText::Alignment::LEFT);
-			chatMessage.setBackgroundColor(incomingMessageColor);
-			chatListLayout.registerChild(chatMessage, SnackerEngine::AlignmentHorizontal::LEFT);
-		}
-		else {
-			chatMessage.setAlignment(SnackerEngine::StaticText::Alignment::RIGHT);
-			chatMessage.setBackgroundColor(outgoingMessageColor);
-			chatListLayout.registerChild(chatMessage, SnackerEngine::AlignmentHorizontal::RIGHT);
-		}
-		guiManager.moveElement(std::move(chatMessage));
-	}
-
-	void postImage(const SnackerEngine::Texture& texture, bool incoming = true) {
-		SnackerEngine::GuiImage image(texture);
-		if (incoming) {
-			chatListLayout.registerChild(image, SnackerEngine::AlignmentHorizontal::LEFT);
-		}
-		else {
-			chatListLayout.registerChild(image, SnackerEngine::AlignmentHorizontal::RIGHT);
-		}
-		guiManager.moveElement(std::move(image));
-	}
-
-	void handleUpdateChatHost() {
-		// Go through requests
-		if (serpManager.areIncomingRequests("messages")) {
-			auto& requests = serpManager.getIncomingRequests("messages");
-			while (!requests.empty()) {
-				SnackerEngine::SERPRequest request = requests.front();
-				if (request.request.requestMethod == request.request.HTTP_POST) {
-					serpManager.sendResponse(SnackerEngine::SERPResponse(serpManager.getSerpID(), request.getSource(),
-						SnackerEngine::HTTPResponse(SnackerEngine::ResponseStatusCode::OK, {}, "")));
-					postMessage(request.request.body, true);
-					// Relay message to all other clients
-					for (auto it = clientIDs.begin(); it != clientIDs.end(); ++it) {
-						if (*it != request.getSource()) {
-							serpManager.sendRequest(SnackerEngine::SERPRequest(serpManager.getSerpID(), *it,
-								SnackerEngine::HTTPRequest(SnackerEngine::HTTPRequest::HTTP_POST, "/messages", {}, request.request.body)));
-						}
-					}
-				}
-				else {
-					serpManager.sendResponse(SnackerEngine::SERPResponse(serpManager.getSerpID(), request.getSource(),
-						SnackerEngine::HTTPResponse(SnackerEngine::ResponseStatusCode::BAD_REQUEST, {}, "")));
-				}
-				requests.pop();
-			}
-		}
-		if (serpManager.areIncomingRequests("clients")) {
-			auto& requests = serpManager.getIncomingRequests("clients");
-			while (!requests.empty()) {
-				SnackerEngine::SERPRequest request = requests.front();
-				if (request.request.requestMethod == request.request.HTTP_POST) {
-					bool found = false;
-					for (auto it = clientIDs.begin(); it != clientIDs.end(); ++it) {
-						if (*it == request.getSource()) {
-							found = true;
-							break;
-						}
-					}
-					if (!found) clientIDs.push_back(request.getSource());
-					serpManager.sendResponse(SnackerEngine::SERPResponse(serpManager.getSerpID(), request.getSource(),
-						SnackerEngine::HTTPResponse(SnackerEngine::ResponseStatusCode::OK, {}, "")));
-				}
-				else if (request.request.requestMethod == request.request.HTTP_DELETE) {
-					for (auto it = clientIDs.begin(); it != clientIDs.end(); ++it) {
-						if (*it == request.getSource()) {
-							clientIDs.erase(it);
-							break;
-						}
-					}
-					serpManager.sendResponse(SnackerEngine::SERPResponse(serpManager.getSerpID(), request.getSource(),
-						SnackerEngine::HTTPResponse(SnackerEngine::ResponseStatusCode::OK, {}, "")));
-				}
-				requests.pop();
-			}
-		}
-		// Handle GUI updates
-		if (postHandle.isActive()) {
-			postHandle.reset();
-			std::string message = postEditBox.getText();
-			postMessage(message, false);
-			// post message to all clients
-			for (const auto& clientID : clientIDs) {
-				serpManager.sendRequest(SnackerEngine::SERPRequest(serpManager.getSerpID(), clientID,
-					SnackerEngine::HTTPRequest(SnackerEngine::HTTPRequest::HTTP_POST, "/messages", {}, message)));
-			}
-		}
-		else if (postImageHandle.isActive()) {
-			postImageHandle.reset();
-			std::string imagePath = postEditBox.getText();
-			auto buffer = SnackerEngine::TextureDataBuffer::loadTextureDataBuffer2D(imagePath);
-			if (buffer.has_value()) {
-				postImage(SnackerEngine::Texture::CreateFromBuffer(buffer.value()), false);
-				// Send texture to clients
-				std::vector<std::byte> dataBuffer;
-				buffer.value().serialize(dataBuffer);
-				SnackerEngine::SERPRequest request(serpManager.getSerpID(), 0,
-					SnackerEngine::HTTPRequest(SnackerEngine::HTTPRequest::HTTP_POST, "/messages", { {"messageType", "image"} }, byteVectorToString(dataBuffer)));
-				for (auto clientID : clientIDs) {
-					request.setDestination(clientID);
-					serpManager.sendRequest(request);
-				}
-			}
-			else {
-				buildPopup("Could not find image at \"" + imagePath + "\"");
-			}
-		}
-		else if (eventHandles[0].isActive()) {
-			eventHandles[0].reset();
-			initializeMainMenu();
-		}
-	}
-
-	void handleUpdateChatJoin() {
-		// Go through requests
-		if (serpManager.areIncomingRequests("messages")) {
-			auto& requests = serpManager.getIncomingRequests("messages");
-			while (!requests.empty()) {
-				SnackerEngine::SERPRequest request = requests.front();
-				if (request.request.requestMethod == request.request.HTTP_POST) {
-					serpManager.sendResponse(SnackerEngine::SERPResponse(serpManager.getSerpID(), request.getSource(),
-						SnackerEngine::HTTPResponse(SnackerEngine::ResponseStatusCode::OK, {}, "")));
-					// Look for the "messageType" header
-					bool foundHeader = false;
-					for (const auto& header : request.request.headers) {
-						if (header.name == "messageType") {
-							foundHeader = true;
-							if (header.value == "image") {
-								std::vector<std::byte> buffer = stringToByteVector(request.request.body);
-								auto textureDataBuffer = SnackerEngine::TextureDataBuffer::Deserialize(buffer);
-								if (textureDataBuffer.has_value()) postImage(SnackerEngine::Texture::CreateFromBuffer(textureDataBuffer.value()));
-								else SnackerEngine::warningLogger << SnackerEngine::LOGGER::BEGIN << "Received invalid texture buffer!" << SnackerEngine::LOGGER::ENDL;
-							}
-							else if (header.value == "text") {
-								postMessage(request.request.body, true);
-							}
-							else {
-								SnackerEngine::warningLogger << SnackerEngine::LOGGER::BEGIN << "Unknown messageType \"" << header.value << "\"" << SnackerEngine::LOGGER::ENDL;
-							}
-							break;
-						}
-					}
-					if (!foundHeader) postMessage(request.request.body, true);
-				}
-				else {
-					serpManager.sendResponse(SnackerEngine::SERPResponse(serpManager.getSerpID(), request.getSource(),
-						SnackerEngine::HTTPResponse(SnackerEngine::ResponseStatusCode::BAD_REQUEST, {}, "")));
-				}
-				requests.pop();
-			}
-		}
-		// Handle GUI updates
-		if (postHandle.isActive()) {
-			postHandle.reset();
-			std::string message = postEditBox.getText();
-			postMessage(message, false);
-			// post message to server
-			serpManager.sendRequest(SnackerEngine::SERPRequest(serpManager.getSerpID(), hostID,
-				SnackerEngine::HTTPRequest(SnackerEngine::HTTPRequest::HTTP_POST, "/messages", {}, message)));
-		}
-		else if (eventHandles[0].isActive()) {
-			eventHandles[0].reset();
-			serpManager.sendRequest(SnackerEngine::SERPRequest(serpManager.getSerpID(), hostID,
-				SnackerEngine::HTTPRequest(SnackerEngine::HTTPRequest::HTTP_DELETE, "/clients", {}, "")));
-			initializeMainMenu();
-		}
-	}
-
-	std::string byteVectorToString(const std::vector<std::byte>& buffer) {
-		std::stringstream ss;
-		for (const auto& byte : buffer) {
-			ss << static_cast<char>(byte);
-		}
-		return ss.str();
-	}
-
-	std::vector<std::byte> stringToByteVector(const std::string& string) {
-		std::vector<std::byte> result;
-		result.reserve(string.length());
-		for (const auto& c : string) {
-			result.push_back(static_cast<std::byte>(c));
-		}
-		return result;
-	}
-
+	Mode mode{ Mode::MAIN_MENU };
+	/// JSON with gui style
+	std::optional<nlohmann::json> guiStyle;
+	/// GUI for the main menu
+	SnackerEngine::EventHandle eventHandleButtonHostWasPressed{};
+	SnackerEngine::EventHandle eventHandleButtonJoinWasPressed{};
+	/// GUI for the chatroom
+	SnackerEngine::EventHandle eventHandleButtonPostMessageWasPressed{};
+	/// Stores the SERPID of the server (in JOIN mode)
+	SnackerEngine::SERPID server;
+	/// Stores the SERPIDs of all connected clients (in HOST mode)
+	std::vector<SnackerEngine::SERPID> clients;
+protected:
+	/// Draws the scene to the screen. Called by the Engine class!
+	void draw() override { guiManager.draw(); }
+	/// Posts a message to the chatbox
+	void postMessageLocal(const std::string& message, bool myMessage=true);
+	/// Sends a message to all connected clients (in HOST mode) or to the server (in JOIN mode)
+	void sendMessage(const std::string& message);
+	/// Relays a message to all connected clients except the sender (only works in HOST mode)
+	void relayMessage(const std::string& message, SnackerEngine::SERPID sender);
+	/// Helper function that initializes the main menue.
+	void initializeMainMenu();
+	/// Helper function that initializes the HOST or JOIN chatroom.
+	void initializeChatroom();
+	/// Helper function that updates the main menue.
+	void updateMainMenu();
+	/// Helper function that updates the HOST or JOIN chatroom.
+	void updateChatroom();
 public:
-	virtual void initialize() override
-	{
-		serpManager.connectToSERPServer();
+	/// Initializes the scene (eg adds update functions, loads data, ...). This is called by the engine
+	void initialize() override;
+	/// Callback function for keyboard input
+	void callbackKeyboard(const int& key, const int& scancode, const int& action, const int& mods) override { guiManager.callbackKeyboard(key, scancode, action, mods); }
+	/// Callback function for mouse button input
+	void callbackMouseButton(const int& button, const int& action, const int& mods) override { guiManager.callbackMouseButton(button, action, mods); }
+	/// Callback function for mouse motion
+	void callbackMouseMotion(const SnackerEngine::Vec2d& position) override { guiManager.callbackMouseMotion(position); }
+	/// Callback function for resizing the window
+	void callbackWindowResize(const SnackerEngine::Vec2i& screenDims) override { guiManager.callbackWindowResize(screenDims); }
+	/// Callback function for scrolling the mouse wheel
+	void callbackMouseScroll(const SnackerEngine::Vec2d& offset) override { guiManager.callbackMouseScroll(offset); }
+	/// Callback function for the input of unicode characters
+	void callbackCharacterInput(const unsigned int& codepoint) override { guiManager.callbackCharacterInput(codepoint); }
+	/// this function get calls regularly by the Engine class.
+	void update(const double& dt) override;
+	/// Deconstructor
+	~ChatScene();
+};
+
+void ChatScene::postMessageLocal(const std::string& message, bool myMessage)
+{
+	// Add message to chatBox GUI
+	std::optional<nlohmann::json> textMessageJson = SnackerEngine::Engine::loadJSONRelativeToResourcePath("gui/textMessage.json");
+	if (!textMessageJson.has_value()) {
+		SnackerEngine::errorLogger << "Couldn't find JSON file \"gui/textMessage.json\".";
+		return;
+	}
+	SnackerEngine::GuiTextBox messageBox(textMessageJson.value(), guiStyle.has_value() ? &guiStyle.value() : nullptr);
+	messageBox.setText(message);
+	auto chatBox = guiManager.getGuiElement<SnackerEngine::GuiVerticalScrollingListLayout>("chatBox");
+	if (chatBox) {
+		if (myMessage) {
+			messageBox.setBackgroundColor(SnackerEngine::Color4f(0.1f, 0.3f, 0.1f, 1.0f));
+			chatBox->registerChild(messageBox, SnackerEngine::AlignmentHorizontal::RIGHT);
+		}
+		else {
+			messageBox.setBackgroundColor(SnackerEngine::Color4f(0.1f, 0.1f, 0.3f, 1.0f));
+			chatBox->registerChild(messageBox, SnackerEngine::AlignmentHorizontal::LEFT);
+		}
+		guiManager.moveElement(std::move(messageBox));
+	}
+}
+
+void ChatScene::sendMessage(const std::string& message)
+{
+	if (mode == Mode::HOST) {
+
+	}
+	else if (mode == Mode::JOIN) {
+		SnackerEngine::SERPRequest request{};
+		//serpManager.sendRequest();
+	}
+	// TODO: Implement
+}
+
+void ChatScene::relayMessage(const std::string& message, SnackerEngine::SERPID sender)
+{
+	// TODO: Implement
+}
+
+void ChatScene::initializeMainMenu()
+{
+	// Load GUI json
+	std::optional<nlohmann::json> mainMenuJson = SnackerEngine::Engine::loadJSONRelativeToResourcePath("gui/mainMenu.json");
+	guiStyle = SnackerEngine::Engine::loadJSONRelativeToResourcePath("gui/guiStyle.json");
+	if (mainMenuJson.has_value()) guiManager.loadAndRegisterJSON(mainMenuJson.value(), guiStyle.has_value() ? &guiStyle.value() : nullptr);
+	else SnackerEngine::errorLogger << SnackerEngine::LOGGER::BEGIN << "Couldn't find JSON file \"gui/mainMenu.json\" in resource folder." << SnackerEngine::LOGGER::ENDL;
+	// Connect button handles
+	auto buttonHost = guiManager.getGuiElement<SnackerEngine::GuiButton>("buttonHost");
+	if (buttonHost) buttonHost->subscribeToEventButtonPress(eventHandleButtonHostWasPressed);
+	else SnackerEngine::errorLogger << SnackerEngine::LOGGER::BEGIN << "GUI from \"gui/mainMenu.json\" doesn't have a button with name \"buttonHost\"." << SnackerEngine::LOGGER::ENDL;
+	auto buttonJoin = guiManager.getGuiElement<SnackerEngine::GuiButton>("buttonJoin");
+	if (buttonJoin) buttonJoin->subscribeToEventButtonPress(eventHandleButtonJoinWasPressed);
+	else SnackerEngine::errorLogger << SnackerEngine::LOGGER::BEGIN << "GUI from \"gui/mainMenu.json\" doesn't have a button with name \"buttonJoin\"." << SnackerEngine::LOGGER::ENDL;
+}
+
+void ChatScene::initializeChatroom()
+{
+	std::optional<nlohmann::json> chatRoomJson;
+	if (eventHandleButtonHostWasPressed.isActive()) chatRoomJson = SnackerEngine::Engine::loadJSONRelativeToResourcePath("gui/chatRoomHost.json");
+	else chatRoomJson = SnackerEngine::Engine::loadJSONRelativeToResourcePath("gui/chatRoomJoin.json");
+	if (chatRoomJson.has_value()) guiManager.loadAndRegisterJSON(chatRoomJson.value(), guiStyle.has_value() ? &guiStyle.value() : nullptr);
+	// Connect button handle
+	auto buttonPostMessage = guiManager.getGuiElement<SnackerEngine::GuiButton>("postMessageButton");
+	if (buttonPostMessage) buttonPostMessage->subscribeToEventButtonPress(eventHandleButtonPostMessageWasPressed);
+	else SnackerEngine::errorLogger << SnackerEngine::LOGGER::BEGIN << "chatroom GUI doesn't have a button with name \"postMessageButton\"." << SnackerEngine::LOGGER::ENDL;
+	// Do special GUI stoff for when we're in HOST mode
+	if (mode == Mode::HOST) {
+		// Display textBox with SERPID
+		auto textBoxSerpID = guiManager.getGuiElement<SnackerEngine::GuiTextBox>("textBoxSerpID");
+		if (textBoxSerpID) textBoxSerpID->setText("SerpID: " + SnackerEngine::to_string(serpManager.getSerpID()));
+		else SnackerEngine::errorLogger << SnackerEngine::LOGGER::BEGIN << "chatroom GUI doesn't have a text box with name \"textBoxSerpID\"." << SnackerEngine::LOGGER::ENDL;
+	}
+}
+
+void ChatScene::updateMainMenu()
+{
+	if (eventHandleButtonHostWasPressed.isActive() || eventHandleButtonJoinWasPressed.isActive()) {
+		// Client wants to host or join a chatroom. Thus we need to first connect to the SERP server
+		SnackerEngine::SERPManager::ConnectResult connectResult = serpManager.connectToSERPServer();
+		// Lock buttons
+		auto buttonHost = guiManager.getGuiElement<SnackerEngine::GuiButton>("buttonHost");
+		if (buttonHost) buttonHost->lock();
+		auto buttonJoin = guiManager.getGuiElement<SnackerEngine::GuiButton>("buttonJoin");
+		if (buttonJoin) buttonJoin->lock();
+		// Check result
+		if (connectResult.result == SnackerEngine::SERPManager::ConnectResult::Result::SUCCESS) {
+			SnackerEngine::infoLogger << SnackerEngine::LOGGER::BEGIN <<"SUCCESS" << SnackerEngine::LOGGER::ENDL;
+			// Change mode
+			if (eventHandleButtonHostWasPressed.isActive()) mode = Mode::HOST;
+			else mode = Mode::JOIN;
+			// Load either host or join Scene
+			guiManager.clear();
+			initialize();
+		}
+		else if (connectResult.result == SnackerEngine::SERPManager::ConnectResult::Result::ERROR) {
+			SnackerEngine::infoLogger << SnackerEngine::LOGGER::BEGIN << "ERROR" << SnackerEngine::LOGGER::ENDL;
+			// Display error message
+			// TODO
+			// Unlock buttons
+			auto buttonHost = guiManager.getGuiElement<SnackerEngine::GuiButton>("buttonHost");
+			if (buttonHost) buttonHost->unlock();
+			auto buttonJoin = guiManager.getGuiElement<SnackerEngine::GuiButton>("buttonJoin");
+			if (buttonJoin) buttonJoin->unlock();
+		}
+		else {
+			SnackerEngine::infoLogger << SnackerEngine::LOGGER::BEGIN << "PENDING" << SnackerEngine::LOGGER::ENDL;
+		}
+	}
+}
+
+void ChatScene::updateChatroom()
+{
+	if (eventHandleButtonPostMessageWasPressed.isActive()) {
+		eventHandleButtonPostMessageWasPressed.reset();
+		// TODO: Send message to clients or server
+		auto messageEditBox = guiManager.getGuiElement<SnackerEngine::GuiEditBox>("messageEditBox");
+		if (messageEditBox) postMessageLocal(messageEditBox->getText());
+		else SnackerEngine::errorLogger << SnackerEngine::LOGGER::BEGIN << "chatroom GUI doesn't have a editBox named \"messageEditBox\".";
+	}
+}
+
+/// Initializes the scene (eg adds update functions, loads data, ...). This is called by the engine
+void ChatScene::initialize()
+{
+	if (mode == Mode::MAIN_MENU) {
 		initializeMainMenu();
 	}
-
-	void draw() override
-	{
-		guiManager.draw();
+	else if (mode == Mode::HOST || mode == Mode::JOIN) {
+		initializeChatroom();
 	}
+}
 
-	virtual void callbackKeyboard(const int& key, const int& scancode, const int& action, const int& mods) override
-	{
-		guiManager.callbackKeyboard(key, scancode, action, mods);
+/// this function get calls regularly by the Engine class.
+void ChatScene::update(const double& dt)
+{
+	// update the serpManager
+	serpManager.update(dt);
+	// update the guiManager
+	guiManager.update(dt);
+	// depending on the current mode, perform different logic
+	if (mode == Mode::MAIN_MENU) {
+		updateMainMenu();
 	}
-
-	virtual void callbackMouseButton(const int& button, const int& action, const int& mods) override
-	{
-		guiManager.callbackMouseButton(button, action, mods);
+	else if (mode == Mode::HOST || mode == Mode::JOIN) {
+		updateChatroom();
 	}
+}
 
-	virtual void callbackMouseMotion(const SnackerEngine::Vec2d& position) override
-	{
-		guiManager.callbackMouseMotion(position);
-	}
-
-	virtual void callbackWindowResize(const SnackerEngine::Vec2i& screenDims) override
-	{
-		guiManager.callbackWindowResize(screenDims);
-	}
-
-	virtual void callbackMouseScroll(const SnackerEngine::Vec2d& offset) override
-	{
-		guiManager.callbackMouseScroll(offset);
-	}
-
-	virtual void callbackCharacterInput(const unsigned int& codepoint) override
-	{
-		guiManager.callbackCharacterInput(codepoint);
-	}
-
-	virtual void update(const double& dt) override
-	{
-		switch (mode)
-		{
-		case ChatScene::Mode::MAIN_MENU: handleUpdateMainMenu(); break;
-		case ChatScene::Mode::JOIN_MENU: handleUpdateJoinMenu(); break;
-		case ChatScene::Mode::CHAT_HOST: handleUpdateChatHost(); break;
-		case ChatScene::Mode::CHAT_JOIN: handleUpdateChatJoin(); break;
-		default:
-			break;
-		}
-		serpManager.update(dt);
-		guiManager.update(dt);
-		if (popupOkHandle.isActive()) {
-			popupOkHandle.reset();
-			popupWindow = nullptr;
-		}
-	}
-
-};
+ChatScene::~ChatScene()
+{
+	// TODO
+}
 
 int main()
 {
+	// Initialize the Engine and create the window
 	if (!SnackerEngine::Engine::initialize(1200, 700, "Chat demo")) {
 		SnackerEngine::errorLogger << SnackerEngine::LOGGER::BEGIN << "startup failed!" << SnackerEngine::LOGGER::ENDL;
 		return 0;
 	}
 
+	// Set clear color
 	SnackerEngine::Renderer::setClearColor(SnackerEngine::Color3f(0.4f, 0.4f, 0.4f));
 
+	// Register new GUIelements
+	SnackerEngine::GuiManager::registerGuiElementType<SnackerEngine::GuiEditVariable<SnackerEngine::SERPID>>("_SERPID");
+
+	// Initialize network code
 	SnackerEngine::initializeNetwork();
 	
+	// Create, initialize and run scene
 	{
 		ChatScene chatScene;
 		chatScene.initialize();
@@ -555,5 +256,6 @@ int main()
 		SnackerEngine::Engine::startup();
 	}
 	
+	// Cleanup
 	SnackerEngine::Engine::terminate();
 }

@@ -12,11 +12,13 @@ class SERPServer
 private:
 	/// Collection of Clients
 	std::vector<Client> clients;
-	/// Collection of pollFileDescriptors for ease of use of the poll() function. Assumes that 
-	/// new clients connect only rarely
-	std::vector<pollfd> pollFileDescriptors;
+	/// Collection of pollFileDescriptors for ease of use of the poll() function. This collection of
+	/// pollFileDescriptors is used for accepting new clients and receiving short messages.
+	std::vector<pollfd> clientPollFileDescriptors;
 	/// TCP Socket for accepting incoming connection requests
-	SnackerEngine::SocketTCP incomingRequestSocket;
+	SnackerEngine::SocketTCP incomingConnectRequestSocket;
+	/// TCP Socket for accepting incoming data socket connection requests
+	SnackerEngine::SocketTCP incomingDataRequestSocket;
 	/// A buffer that is used as temporary storage
 	SnackerEngine::Buffer storageBuffer;
 	/// How many tries are done to obtain a valid serpID
@@ -26,6 +28,8 @@ private:
 	bool isValidSerpID(SnackerEngine::SERPID id);
 	/// Tries to connect a new client with the given socket
 	void connectNewClient(SnackerEngine::SocketTCP socket);
+	/// Tries to connect a new data socket
+	void connectDataSocket(SnackerEngine::SocketTCP socket);
 	/// Disconnects the client at the given index
 	void disconnectClient(unsigned index);
 	/// Receives a message from the given socket

@@ -2,6 +2,7 @@
 #include <exception>
 #include <iostream>
 #include <WinSock2.h>
+#include <thread>
 
 #include "Network\SERP\SERPEndpoint.h"
 #include "Network\SERP\SERP.h"
@@ -37,17 +38,22 @@ void SERPServer::connectNewClient(SnackerEngine::SocketTCP socket)
 	}
 	if (success) {
 		clients.push_back(Client(std::move(socket), serpID));
-		pollFileDescriptors.push_back(pollfd(clients.back().getEndpoint().getTCPEndpoint().getSocket().sock, POLLRDNORM, NULL));
+		clientPollFileDescriptors.push_back(pollfd(clients.back().getEndpoint().getTCPEndpoint().getSocket().sock, POLLRDNORM, NULL));
 		SnackerEngine::setToNonBlocking(clients.back().getEndpoint().getTCPEndpoint().getSocket());
 		std::cout << "new client has connected!" << std::endl;
 	}
+}
+
+void SERPServer::connectDataSocket(SnackerEngine::SocketTCP socket)
+{
+	// TODO: Implement
 }
 
 void SERPServer::disconnectClient(unsigned index)
 {
 	if (index < clients.size()) {
 		clients.erase(clients.begin() + index);
-		pollFileDescriptors.erase(pollFileDescriptors.begin() + index + 1);
+		clientPollFileDescriptors.erase(clientPollFileDescriptors.begin() + index + 1);
 	}
 }
 
@@ -178,9 +184,11 @@ bool SERPServer::prepareForRelay(SnackerEngine::SERPMessage& message, Client& so
 
 void SERPServer::relayRequest(Client& source, Client& destination, SnackerEngine::SERPRequest& request)
 {
+	if (request.getRequestStatusCode() == SnackerEngine::RequestStatusCode::PUT) std::cout << "STARTING relay of PUT request ..." << std::endl;
 	if (!prepareForRelay(static_cast<SnackerEngine::SERPMessage&>(request), source)) return;
 	// Relay message
 	destination.getEndpoint().sendMessage(request, false);
+	if (request.getRequestStatusCode() == SnackerEngine::RequestStatusCode::PUT) std::cout << "FINISHED relay!" << std::endl;
 }
 
 void SERPServer::relayResponse(Client& source, Client& destination, SnackerEngine::SERPResponse& response)
@@ -188,21 +196,6 @@ void SERPServer::relayResponse(Client& source, Client& destination, SnackerEngin
 	if (!prepareForRelay(response, source)) return;
 	// Relay message
 	destination.getEndpoint().sendMessage(response, false);
-}
-
-SERPServer::SERPServer()
-	: clients{}, pollFileDescriptors{}, incomingRequestSocket{}, storageBuffer(100'000)
-{
-	auto result = SnackerEngine::createSocketTCP(SnackerEngine::getSERPServerPort());
-	if (result.has_value()) {
-		incomingRequestSocket = std::move(result.value());
-		pollFileDescriptors = { pollfd(incomingRequestSocket.sock, POLLRDNORM, NULL)};
-	}
-	else throw std::exception("Could not create incomingRequestSocket!");
-}
-
-SERPServer::~SERPServer()
-{
 }
 
 // Helper function that throws an exception if the given revent is an error
@@ -216,44 +209,89 @@ void checkForPollError(SHORT revents)
 	}
 }
 
+void SERPServer::runDataSocketLoop()
+{
+	if (!SnackerEngine::markAsListen(incomingDataRequestSocket)) throw std::exception("Could not mark incomingDataRequestSocket as listening!");
+	while (true) {
+		// Handle incomingDataRequestSocket
+		if (dataPollFileDescriptors[0].revents != NULL) {
+			checkForPollError(dataPollFileDescriptors[0].revents);
+			if (dataPollFileDescriptors[0].revents & POLLHUP) {
+				throw std::exception("Connection to incomingDataRequestSocket failed!");
+			}
+			if (dataPollFileDescriptors[0].revents & POLLRDNORM) {
+				std::optional<SnackerEngine::SocketTCP> newDataSocket = SnackerEngine::acceptConnectionRequest(incomingDataRequestSocket);
+				if (newDataSocket.has_value()) {
+					connectDataSocket(std::move(newDataSocket.value()));
+				}
+			}
+		}
+	}
+}
+
+SERPServer::SERPServer()
+	: clients{}, clientPollFileDescriptors{}, dataPollFileDescriptors{}, incomingConnectRequestSocket{}, incomingDataRequestSocket{}, storageBuffer(100'000)
+{
+	// Initialize incomingConnectRequestSocket socket
+	auto result = SnackerEngine::createSocketTCP(SnackerEngine::getSERPServerPort());
+	if (result.has_value()) {
+		incomingConnectRequestSocket = std::move(result.value());
+		clientPollFileDescriptors = { pollfd(incomingConnectRequestSocket.sock, POLLRDNORM, NULL) };
+	}
+	else throw std::exception("Could not create incomingConnectRequestSocket!");
+	// Initialize incomingDataRequestSocket
+	result = SnackerEngine::createSocketTCP(SnackerEngine::getSERPServerDataPort());
+	if (result.has_value()) {
+		incomingDataRequestSocket = std::move(result.value());
+		dataPollFileDescriptors = { pollfd(incomingDataRequestSocket.sock, POLLRDNORM, NULL) };
+	}
+	else throw std::exception("Could not create incomingDataRequestSocket!");
+}
+
+SERPServer::~SERPServer()
+{
+}
+
 void SERPServer::run()
 {
-	if (!SnackerEngine::markAsListen(incomingRequestSocket)) throw std::exception("Could not mark incomingRequestSocket as listening!");
-	// main loop
+	// Start dataSocketLoop on seperate thread
+	std::thread dataSocketLoopThread = std::thread(&SERPServer::runDataSocketLoop, this);
+	// Start main loop
+	if (!SnackerEngine::markAsListen(incomingConnectRequestSocket)) throw std::exception("Could not mark incomingConnectRequestSocket as listening!");
 	while (true) {
 		// First process events
-		int result = WSAPoll(&pollFileDescriptors[0], pollFileDescriptors.size(), 1000);
+		int result = WSAPoll(&clientPollFileDescriptors[0], clientPollFileDescriptors.size(), 1000);
 		if (result == SOCKET_ERROR) throw std::runtime_error(std::string("Socket error with error code " + std::to_string(WSAGetLastError()) + " occured during call to poll()!"));
 		if (result > 0) {
-			// Handle incomingRequestSocket
-			if (pollFileDescriptors[0].revents != NULL) {
-				checkForPollError(pollFileDescriptors[0].revents);
-				if (pollFileDescriptors[0].revents & POLLHUP) {
-					throw std::exception("Connection to incomingRequestSocket failed!");
+			// Handle incomingConnectRequestSocket
+			if (clientPollFileDescriptors[0].revents != NULL) {
+				checkForPollError(clientPollFileDescriptors[0].revents);
+				if (clientPollFileDescriptors[0].revents & POLLHUP) {
+					throw std::exception("Connection to incomingConnectRequestSocket failed!");
 				}
-				if (pollFileDescriptors[0].revents & POLLRDNORM) {
-					std::optional<SnackerEngine::SocketTCP> clientSocket = SnackerEngine::acceptConnectionRequest(incomingRequestSocket);
+				if (clientPollFileDescriptors[0].revents & POLLRDNORM) {
+					std::optional<SnackerEngine::SocketTCP> clientSocket = SnackerEngine::acceptConnectionRequest(incomingConnectRequestSocket);
 					if (clientSocket.has_value()) {
 						connectNewClient(std::move(clientSocket.value()));
 					}
 				}
 			}
 			// Handle remaining sockets
-			for (unsigned i = 1; i < pollFileDescriptors.size(); ++i) {
-				if (pollFileDescriptors[i].revents & POLLNVAL) {
+			for (unsigned i = 1; i < clientPollFileDescriptors.size(); ++i) {
+				if (clientPollFileDescriptors[i].revents & POLLNVAL) {
 					throw std::exception("POLLNVAL occured");
 				}
-				else if (pollFileDescriptors[i].revents & POLLERR) {
+				else if (clientPollFileDescriptors[i].revents & POLLERR) {
 					// Client socket disconnected with error
 					disconnectClient(i - 1);
 					std::cout << "client has disconnected with error!" << std::endl;
 				}
-				else if (pollFileDescriptors[i].revents & POLLHUP) {
+				else if (clientPollFileDescriptors[i].revents & POLLHUP) {
 					// Client has disconnected
 					disconnectClient(i - 1);
-					std::cout << "client has disconnected!" << std::endl;
+					std::cout << "cclient has disconnected!" << std::endl;
 				}
-				else if (pollFileDescriptors[i].revents & POLLRDNORM) {
+				else if (clientPollFileDescriptors[i].revents & POLLRDNORM) {
 					// Client has sent a message
 					std::cout << "client has sent a message!" << std::endl;
 					handleIncomingMessage(clients[static_cast<std::size_t>(i) - 1]);
@@ -261,7 +299,7 @@ void SERPServer::run()
 			}
 		}
 		else {
-			std::cout << "no event detected!" << std::endl;
+			//std::cout << "no event detected!" << std::endl; DEBUG
 		}
 	}
 }

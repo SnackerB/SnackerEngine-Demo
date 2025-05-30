@@ -1,0 +1,44 @@
+{
+  "typeID": "GUI_HORIZONTAL_WEIGHTED_LAYOUT",
+  "allowMoveBorders": true,
+  "children": [
+    {
+      "typeID": "GUI_VERTICAL_SCROLLING_LIST_LAYOUT",
+      "layoutOptions": { "weight": 0.7 },
+      "backgroundColor": [ 0.1, 0.1, 0.1, 0.0 ],
+      "name": "chatBox"
+    },
+    {
+      "typeID": "GUI_VERTICAL_LIST_LAYOUT",
+      "layoutOptions": { "weight": 0.3 },
+      "backgroundColor": [ 0.2, 0.2, 0.2, 1.0 ],
+      "children": [
+        {
+          "typeID": "GUI_EDIT_BOX",
+          "fontSize": "fontSizeNormal",
+          "parseMode": "WORD_BY_WORD",
+          "alignment": "CENTER",
+          "preferredHeight": "messageEditBoxHeight",
+          "preferredWidth": -1,
+          "sizeHintModeMinSize": "ARBITRARY",
+          "sizeHintModePreferredSize": "ARBITRARY",
+          "name": "messageEditBox"
+        },
+        {
+          "typeID": "GUI_BUTTON",
+          "text": "Post Message",
+          "fontSize": "fontSizeNormal",
+          "preferredWidth": -1,
+          "name": "postMessageButton"
+        },
+        {
+          "typeID": "GUI_TEXT_BOX",
+          "text": "",
+          "fontSize": "fontSizeNormal",
+          "preferredWidth": -1,
+          "name": "textBoxSerpID"
+        }
+      ]
+    }
+  ]
+}

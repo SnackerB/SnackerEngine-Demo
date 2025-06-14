@@ -1,305 +1,345 @@
 #include "Server.h"
-#include <exception>
 #include <iostream>
-#include <WinSock2.h>
-#include <thread>
-
-#include "Network\SERP\SERPEndpoint.h"
-#include "Network\SERP\SERP.h"
-#include "Network\SERP\SERPID.h"
 #include "Utility\Formatting.h"
 
-bool SERPServer::isValidSerpID(SnackerEngine::SERPID id)
+void Server::printMessage(const std::string& message)
 {
-	if (id > 9999) return false;
-	for (const auto& client : clients) {
-		if (client.getSerpID() == id) return false;
-	}
-	return true;
+	// Acquire lock
+	std::lock_guard lockGuard(printToConsoleMutex);
+	// Write to console
+	std::cout << message << std::endl;
 }
 
-void SERPServer::connectNewClient(SnackerEngine::SocketTCP socket)
+std::shared_ptr<Client> Server::getClient(SnackerEngine::SERPID serpID)
 {
-	// First we check if a client with the given address alredy has connected
-	for (auto& client : clients) {
-		if (SnackerEngine::compare(client.getEndpoint().getTCPEndpoint().getSocket().addr, socket.addr)) {
-			std::cout << "client already exists!" << std::endl;
-			return;
+	// Acquire lock
+	std::lock_guard lockGuard(clientsMapMutex);
+	// Look for client with the given ID
+	auto result = clients.find(unsigned int(serpID));
+	// If the client was found, return the client, else return nullptr
+	if (result == clients.end()) return nullptr;
+	else return result->second;
+}
+
+void Server::connectClient(SnackerEngine::SocketTCP socket)
+{
+	std::shared_ptr<Client> newClient = nullptr;
+	SnackerEngine::SERPID newSerpID = unsigned int(0);
+	{
+		// Acquire lock
+		std::lock_guard lock(clientsMapMutex);
+		// First we check if a client with the given address alredy has connected
+		for (auto& client : clients) {
+			if (SnackerEngine::compare(client.second->endpoint.getTCPEndpoint().getSocket().addr, socket.addr)) {
+				printMessage("Detected new connection request from client that was already connected.");
+				return;
+			}
+		}
+		bool success = false;
+		for (unsigned i = 0; i < numberOfRetriesSerpID; ++i) {
+			newSerpID = SnackerEngine::getRandomSerpID();
+			auto result = clients.find(unsigned int(newSerpID));
+			if (result == clients.end()) {
+				success = true;
+				break;
+			}
+		}
+		if (success) {
+			newClient = std::make_shared<Client>(std::move(socket), newSerpID);
+			clients.insert(std::make_pair<>(unsigned int(newSerpID), newClient));
+			// Start sender and receiver threads
+			newClient->senderThread = std::thread(&Client::runSenderThread, newClient.get());
+			newClient->receiverThread = std::thread(&Server::runReceiverThread, this, newClient);
 		}
 	}
-	bool success = false;
-	SnackerEngine::SERPID serpID = 0;
-	for (unsigned i = 0; i < numberOfRetriesSerpID; ++i) {
-		serpID = SnackerEngine::getRandomSerpID();
-		if (isValidSerpID(serpID)) {
-			success = true;
-			break;
-		}
-	}
-	if (success) {
-		clients.push_back(Client(std::move(socket), serpID));
-		clientPollFileDescriptors.push_back(pollfd(clients.back().getEndpoint().getTCPEndpoint().getSocket().sock, POLLRDNORM, NULL));
-		SnackerEngine::setToNonBlocking(clients.back().getEndpoint().getTCPEndpoint().getSocket());
-		std::cout << "new client has connected!" << std::endl;
+	if (newClient) {
+		printMessage("New client with serpID " + SnackerEngine::to_string(newSerpID) + " connected.");
 	}
 }
 
-void SERPServer::connectDataSocket(SnackerEngine::SocketTCP socket)
+void Server::disconnectClient(SnackerEngine::SERPID serpID)
 {
-	// TODO: Implement
-}
-
-void SERPServer::disconnectClient(unsigned index)
-{
-	if (index < clients.size()) {
-		clients.erase(clients.begin() + index);
-		clientPollFileDescriptors.erase(clientPollFileDescriptors.begin() + index + 1);
+	// Acquire lock
+	std::lock_guard lockGuard(clientsMapMutex);
+	// Erase client from clients map
+	auto client = clients.find(unsigned int(serpID));
+	if (client != clients.end()) {
+		client->second->disconnect();
+		disconnectedClients.push_back(client->second);
+		clients.erase(client);
 	}
 }
 
-void SERPServer::handleIncomingMessage(Client& client)
+void Server::sendMessageResponse(const SnackerEngine::SERPRequest& request, Client& client, SnackerEngine::ResponseStatusCode responseStatusCode, const std::string& message, SnackerEngine::SERPID sourceID)
 {
-	auto result = client.getEndpoint().receiveMessages();
-	for (auto& message : result) {
-		if (message->isRequest()) {
-			handleRequest(client, static_cast<SnackerEngine::SERPRequest&>(*message));
-			break;
-		}
-		else {
-			handleResponse(client, static_cast<SnackerEngine::SERPResponse&>(*message));
-			break;
-		}
-	}
+	// Create response with message buffer, etc.
+	std::unique_ptr<SnackerEngine::SERPMessage> messageSERP = std::make_unique<SnackerEngine::SERPResponse>(request, responseStatusCode, SnackerEngine::Buffer(message));
+	messageSERP->getHeader().source = sourceID;
+	// This function is already thread safe
+	client.sendMesage(std::move(messageSERP));
 }
 
-void SERPServer::handleRequest(Client& client, SnackerEngine::SERPRequest& request)
-{
-	if (request.getHeader().destination == 0) {
-		// The message is directed at the server!
-		handleRequestToServer(client, request);
-	}
-	else {
-		// Check if the given client is connected
-		std::optional<std::size_t> clientIndex = findClientIndex(request.getHeader().destination);
-		if (!clientIndex.has_value()) {
-			sendMessageResponse(request, client, SnackerEngine::ResponseStatusCode::NOT_FOUND, "no client with serpID " + SnackerEngine::to_string(request.getHeader().destination) + " is currently connected.");
-			std::cout << "no client with serpID " << request.getHeader().destination << " is currently connected." << std::endl;
-		}
-		else {
-			std::cout << "relaying request to " << request.getHeader().destination << "!" << std::endl;
-			relayRequest(client, clients[clientIndex.value()], request);
-		}
-	}
-}
-
-void SERPServer::handleRequestToServer(Client& client, SnackerEngine::SERPRequest& request)
-{
-	std::vector<std::string> path = SnackerEngine::SERPRequest::splitTargetPath(request.target);
-	if (path.size() <= 2 && request.getRequestStatusCode() == SnackerEngine::RequestStatusCode::GET) {
-		if (path.back() == "ping") {
-			answerPingRequest(request, client);
-			std::cout << "ping request detected!" << std::endl;
-			return;
-		}
-		else if (path.back() == "serpID") {
-			answerSerpIDRequest(request, client);
-			std::cout << "serpID request detected!" << std::endl;
-			return;
-		}
-		else if (path.size() == 2 && path[0] == "clients") {
-			answerClientExistsRequest(request, client, path[1]);
-			std::cout << "client exists request detected!" << std::endl;
-			return;
-		}
-	}
-	sendMessageResponse(request, client, SnackerEngine::ResponseStatusCode::NOT_FOUND, ("Did not find target \"" + request.target + "\""));
-	std::cout << "Did not find target \"" << request.target << "\"" << std::endl;
-}
-
-void SERPServer::handleResponse(Client& client, SnackerEngine::SERPResponse& response)
-{
-	// Check if the given client is connected
-	std::optional<std::size_t> clientIndex = findClientIndex(response.getHeader().destination);
-	if (!clientIndex.has_value()) {
-		std::cout << "no client with serpID " << response.getHeader().destination << " is currently connected." << std::endl;
-	}
-	else {
-		std::cout << "relaying response to " << response.getHeader().destination << "!" << std::endl;
-		relayResponse(client, clients[clientIndex.value()], response);
-	}
-}
-
-std::optional<std::size_t> SERPServer::findClientIndex(SnackerEngine::SERPID serpID)
-{
-	for (std::size_t i = 0; i < clients.size(); ++i) {
-		if (clients[i].getSerpID() == serpID) return i;
-	}
-	return {};
-}
-
-void SERPServer::answerPingRequest(const SnackerEngine::SERPRequest& request, Client& client)
-{
-	sendMessageResponse(request, client, SnackerEngine::ResponseStatusCode::OK, "");
-}
-
-void SERPServer::answerSerpIDRequest(const SnackerEngine::SERPRequest& request, Client& client)
-{
-	sendMessageResponse(request, client, SnackerEngine::ResponseStatusCode::OK, SnackerEngine::to_string(client.getSerpID()));
-}
-
-void SERPServer::answerClientExistsRequest(const SnackerEngine::SERPRequest& request, Client& client, const std::string& requestedClient)
-{
-	auto requestedClientID = SnackerEngine::from_string<SnackerEngine::SERPID>(requestedClient);
-	if (requestedClientID.has_value()) {
-		auto requestedClientIndex = findClientIndex(requestedClientID.value());
-		if (requestedClientIndex.has_value()) {
-			sendMessageResponse(request, client, SnackerEngine::ResponseStatusCode::OK, "");
-		}
-		else {
-			sendMessageResponse(request, client, SnackerEngine::ResponseStatusCode::NOT_FOUND, "no client with serpID " + requestedClient + " is currently connected!");
-		}
-	}
-	else {
-		sendMessageResponse(request, client, SnackerEngine::ResponseStatusCode::BAD_REQUEST, "\"" + requestedClient + "\" is not a valid SerpID!");
-	}
-}
-
-void SERPServer::sendMessageResponse(const SnackerEngine::SERPRequest& request, Client& client, SnackerEngine::ResponseStatusCode responseStatusCode, const std::string& message)
-{
-	SnackerEngine::SERPResponse response(request, responseStatusCode, SnackerEngine::Buffer(message));
-	client.getEndpoint().sendMessage(response);
-}
-
-bool SERPServer::prepareForRelay(SnackerEngine::SERPMessage& message, Client& source)
+bool Server::prepareForRelay(const SnackerEngine::SERPMessage& message, Client& source)
 {
 	// Check if the source is correct
-	if (message.getHeader().source != source.getSerpID()) {
+	if (message.getHeader().source != source.serpID) {
 		if (message.isRequest()) {
-			sendMessageResponse(static_cast<SnackerEngine::SERPRequest&>(message), source, SnackerEngine::ResponseStatusCode::BAD_REQUEST, "Attempted to relay message but gave incorrect serpID as source!");
+			if (message.getHeader().getMultiSendFlag()) {
+				for (SnackerEngine::SERPID destination : message.getDestinations()) {
+					sendMessageResponse(static_cast<const SnackerEngine::SERPRequest&>(message), source, SnackerEngine::ResponseStatusCode::BAD_REQUEST, "Attempted to relay message but gave incorrect serpID as source!", destination);
+					printMessage("Failed to relay request from client " + SnackerEngine::to_string(source.serpID) + " due to giving an incorrect serpID as source.");
+				}
+			}
+			else {
+				sendMessageResponse(static_cast<const SnackerEngine::SERPRequest&>(message), source, SnackerEngine::ResponseStatusCode::BAD_REQUEST, "Attempted to relay message but gave incorrect serpID as source!", message.getHeader().destination);
+				printMessage("Failed to relay request from client " + SnackerEngine::to_string(source.serpID) + " due to giving an incorrect serpID as source.");
+			}
 		}
 		return false;
 	}
 	return true;
 }
 
-void SERPServer::relayRequest(Client& source, Client& destination, SnackerEngine::SERPRequest& request)
+void Server::relayRequest(Client& source, SnackerEngine::SERPID destination, std::unique_ptr<SnackerEngine::SERPMessage> request)
 {
-	if (request.getRequestStatusCode() == SnackerEngine::RequestStatusCode::PUT) std::cout << "STARTING relay of PUT request ..." << std::endl;
-	if (!prepareForRelay(static_cast<SnackerEngine::SERPMessage&>(request), source)) return;
-	// Relay message
-	destination.getEndpoint().sendMessage(request, false);
-	if (request.getRequestStatusCode() == SnackerEngine::RequestStatusCode::PUT) std::cout << "FINISHED relay!" << std::endl;
-}
-
-void SERPServer::relayResponse(Client& source, Client& destination, SnackerEngine::SERPResponse& response)
-{
-	if (!prepareForRelay(response, source)) return;
-	// Relay message
-	destination.getEndpoint().sendMessage(response, false);
-}
-
-// Helper function that throws an exception if the given revent is an error
-void checkForPollError(SHORT revents)
-{
-	if (revents & POLLERR) {
-		throw std::exception("POLLERR occured!");
+	if (!prepareForRelay(*request, source)) return;
+	// Check if the destination client is connected and relay the request if it is!
+	std::shared_ptr<Client> destinationClient = getClient(destination);
+	if (destinationClient) {
+		destinationClient->sendMesage(std::move(request));
+		printMessage("Relayed request from client " + SnackerEngine::to_string(source.serpID) + " to client " + SnackerEngine::to_string(destination) + ".");
 	}
-	if (revents & POLLNVAL) {
-		throw std::exception("POLLNVAL occured");
+	else {
+		// The requested client is not connected. Send this information to sender.
+		sendMessageResponse(static_cast<const SnackerEngine::SERPRequest&>(*request), source, SnackerEngine::ResponseStatusCode::NOT_FOUND, "no client with serpID " + SnackerEngine::to_string(destination) + " is currently connected.", destination);
+		printMessage("Tried to relay request from client " + SnackerEngine::to_string(source.serpID) + " to client " + SnackerEngine::to_string(destination) + ", but client " + SnackerEngine::to_string(destination) + " was not connected.");
 	}
 }
 
-void SERPServer::runDataSocketLoop()
+void Server::relayRequestMulti(Client& source, std::unique_ptr<SnackerEngine::SERPMessage> request)
 {
-	if (!SnackerEngine::markAsListen(incomingDataRequestSocket)) throw std::exception("Could not mark incomingDataRequestSocket as listening!");
-	while (true) {
-		// Handle incomingDataRequestSocket
-		if (dataPollFileDescriptors[0].revents != NULL) {
-			checkForPollError(dataPollFileDescriptors[0].revents);
-			if (dataPollFileDescriptors[0].revents & POLLHUP) {
-				throw std::exception("Connection to incomingDataRequestSocket failed!");
-			}
-			if (dataPollFileDescriptors[0].revents & POLLRDNORM) {
-				std::optional<SnackerEngine::SocketTCP> newDataSocket = SnackerEngine::acceptConnectionRequest(incomingDataRequestSocket);
-				if (newDataSocket.has_value()) {
-					connectDataSocket(std::move(newDataSocket.value()));
-				}
-			}
+	if (!prepareForRelay(*request, source)) return;
+	// Go through destinations and send seperately
+	std::unordered_set<uint16_t> destinations = request->getDestinations();
+	request->getHeader().setMultiSendFlag(false);
+	request->clearDestinations();
+	for (auto destination : destinations) {
+		// Check if the destination client is connected and relay the request if it is!
+		std::shared_ptr<Client> destinationClient = getClient(destination);
+		if (destinationClient) {
+			request->getHeader().destination = destination;
+			destinationClient->sendMesage(std::make_unique<SnackerEngine::SERPRequest>(*static_cast<SnackerEngine::SERPRequest*>(request.get())));
+			printMessage("Relayed request from client " + SnackerEngine::to_string(source.serpID) + " to client " + SnackerEngine::to_string(destination) + ".");
+		}
+		else {
+			// The requested client is not connected. Send this information to sender.
+			sendMessageResponse(static_cast<const SnackerEngine::SERPRequest&>(*request), source, SnackerEngine::ResponseStatusCode::NOT_FOUND, "no client with serpID " + SnackerEngine::to_string(destination) + " is currently connected.", destination);
+			printMessage("Tried to relay request from client " + SnackerEngine::to_string(source.serpID) + " to client " + SnackerEngine::to_string(destination) + ", but client " + SnackerEngine::to_string(destination) + " was not connected.");
 		}
 	}
 }
 
-SERPServer::SERPServer()
-	: clients{}, clientPollFileDescriptors{}, dataPollFileDescriptors{}, incomingConnectRequestSocket{}, incomingDataRequestSocket{}, storageBuffer(100'000)
+void Server::relayResponse(Client& source, SnackerEngine::SERPID destination, std::unique_ptr<SnackerEngine::SERPMessage> response)
+{
+	if (!prepareForRelay(*response, source)) return;
+	// Check if the destination client is connected and relay the response if it is!
+	std::shared_ptr<Client> destinationClient = getClient(destination);
+	if (destinationClient) {
+		destinationClient->sendMesage(std::move(response));
+		printMessage("Relayed response from client " + SnackerEngine::to_string(source.serpID) + " to client " + SnackerEngine::to_string(destination) + ".");
+	}
+	else {
+		// The requested client is not connected.
+		printMessage("Tried to relay response from client " + SnackerEngine::to_string(source.serpID) + " to client " + SnackerEngine::to_string(destination) + ", but client " + SnackerEngine::to_string(destination) + " was not connected.");
+	}
+}
+
+void Server::answerClientExistsRequest(Client& client, const SnackerEngine::SERPRequest& request, const std::string& requestedClient)
+{
+	auto requestedClientID = SnackerEngine::from_string<SnackerEngine::SERPID>(requestedClient);
+	if (requestedClientID.has_value()) {
+		bool success = false;
+		{
+			// Acquire lock
+			std::lock_guard lockGuard(clientsMapMutex);
+			auto result = clients.find(unsigned int(requestedClientID.value()));
+			if (result != clients.end()) success = true;
+		}
+		if (success) {
+			sendMessageResponse(request, client, SnackerEngine::ResponseStatusCode::OK, "");
+			printMessage("Answered clientExists request from client " + SnackerEngine::to_string(client.serpID) + ": Client with serpID " + requestedClient + " is currently connected!");
+		}
+		else {
+			sendMessageResponse(request, client, SnackerEngine::ResponseStatusCode::NOT_FOUND, "no client with serpID " + requestedClient + " is currently connected!");
+			printMessage("Answered clientExists request from client " + SnackerEngine::to_string(client.serpID) + ": No client with serpID " + requestedClient + " is currently connected!");
+		}
+	}
+	else {
+		sendMessageResponse(request, client, SnackerEngine::ResponseStatusCode::BAD_REQUEST, "\"" + requestedClient + "\" is not a valid SerpID!");
+		printMessage("Answered clientExists request from client " + SnackerEngine::to_string(client.serpID) + ": \"" + requestedClient + "\" is not a valid SerpID.");
+	}
+}
+
+void Server::handleIncomingRequestToServer(Client& client, std::unique_ptr<SnackerEngine::SERPMessage> request)
+{
+	const SnackerEngine::SERPRequest& requestRef = static_cast<const SnackerEngine::SERPRequest&>(*request);
+	std::vector<std::string> path = SnackerEngine::SERPRequest::splitTargetPath(requestRef.target);
+	if (path.size() <= 2 && requestRef.getRequestStatusCode() == SnackerEngine::RequestStatusCode::GET) {
+		if (path.back() == "ping") {
+			sendMessageResponse(requestRef, client, SnackerEngine::ResponseStatusCode::OK, "");
+			printMessage("Answered ping request from client " + SnackerEngine::to_string(client.serpID) + ".");
+			return;
+		}
+		else if (path.back() == "serpID") {
+			sendMessageResponse(requestRef, client, SnackerEngine::ResponseStatusCode::OK, SnackerEngine::to_string(client.serpID));
+			printMessage("Answered serpID request from client " + SnackerEngine::to_string(client.serpID) + ".");
+			return;
+		}
+		else if (path.size() == 2 && path[0] == "clients") {
+			answerClientExistsRequest(client, requestRef, path[1]);
+			return;
+		}
+	}
+	sendMessageResponse(requestRef, client, SnackerEngine::ResponseStatusCode::NOT_FOUND, ("Did not find target \"" + requestRef.target + "\""));
+	printMessage("Client sent request with invalid target \"" + requestRef.target + "\" to server.");
+}
+
+void Server::handleIncomingRequest(Client& client, std::unique_ptr<SnackerEngine::SERPMessage> request)
+{
+	if (request->getHeader().getMultiSendFlag()) {
+		// The message is directed at other clients. Try to multisend relay.
+		relayRequestMulti(client, std::move(request));
+	}
+	else if (request->getHeader().destination == 0) {
+		// The message is directed at the server!
+		handleIncomingRequestToServer(client, std::move(request));
+	}
+	else {
+		// The message is directed to another client. Try to relay.
+		SnackerEngine::SERPID destination = request->getHeader().destination;
+		relayRequest(client, destination, std::move(request));
+	}
+}
+
+void Server::handleIncomingResponse(Client& client, std::unique_ptr<SnackerEngine::SERPMessage> response)
+{
+	SnackerEngine::SERPID destination = response->getHeader().destination;
+	relayResponse(client, destination, std::move(response));
+}
+
+void Server::handleIncomingMessage(Client& client)
+{
+	std::vector<std::unique_ptr<SnackerEngine::SERPMessage>> result = std::move(client.endpoint.receiveMessages());
+	for (unsigned int i = 0; i < result.size(); ++i) {
+		if (result[i]->isRequest()) {
+			handleIncomingRequest(client, std::move(result[i]));
+		}
+		else {
+			handleIncomingResponse(client, std::move(result[i]));
+		}
+	}
+}
+
+void Server::runReceiverThread(std::shared_ptr<Client> client)
+{
+	// Create poll file descriptor for listening to received messages on client socket
+	pollfd clientPollFD(client->endpoint.getTCPEndpoint().getSocket().sock, POLLRDNORM, NULL);
+	while (client->connected) {
+		// Listen for message
+		int result = WSAPoll(&clientPollFD, 1, pollFdTimeout);
+		if (result == SOCKET_ERROR) {
+			// Write error to chat, disconnect client and end thread
+			printMessage("Socket error with error code " + SnackerEngine::to_string(WSAGetLastError()) + " occured during call to poll() on on client with SERPID" + SnackerEngine::to_string(client->serpID) + "!");
+			disconnectClient(client->serpID);
+			break;
+		}
+		else if (clientPollFD.revents & POLLNVAL) {
+			// Write error to chat, disconnect client and end thread
+			printMessage("Received error POLLNVAL during call to poll() on on client with SERPID" + SnackerEngine::to_string(client->serpID) + "!");
+			disconnectClient(client->serpID);
+			break;
+		}
+		else if (clientPollFD.revents & POLLERR) {
+			// Client socket disconnected with error. Write error to chat, disconnect client and end thread
+			printMessage("Client with SERPID " + SnackerEngine::to_string(client->serpID) + " disconnected with error.");
+			disconnectClient(client->serpID);
+			break;
+		}
+		else if (clientPollFD.revents & POLLHUP) {
+			// Client has disconnected
+			printMessage("Client with SERPID " + SnackerEngine::to_string(client->serpID) + " disconnected.");
+			disconnectClient(client->serpID);
+			break;
+		}
+		else if (clientPollFD.revents & POLLRDNORM) {
+			// Client has sent a message
+			printMessage("Client with SERPID " + SnackerEngine::to_string(client->serpID) + " has sent a message.");
+			handleIncomingMessage(*client);
+		}
+	}
+	client->receiverThreadFinished = true;
+}
+
+Server::Server()
+	: printToConsoleMutex{}, clients{}, clientsMapMutex{}, incomingConnectRequestSocket{}, incomingRequestFileDescriptor{}
 {
 	// Initialize incomingConnectRequestSocket socket
 	auto result = SnackerEngine::createSocketTCP(SnackerEngine::getSERPServerPort());
 	if (result.has_value()) {
 		incomingConnectRequestSocket = std::move(result.value());
-		clientPollFileDescriptors = { pollfd(incomingConnectRequestSocket.sock, POLLRDNORM, NULL) };
+		incomingRequestFileDescriptor = pollfd(incomingConnectRequestSocket.sock, POLLRDNORM, NULL);
 	}
 	else throw std::exception("Could not create incomingConnectRequestSocket!");
-	// Initialize incomingDataRequestSocket
-	result = SnackerEngine::createSocketTCP(SnackerEngine::getSERPServerDataPort());
-	if (result.has_value()) {
-		incomingDataRequestSocket = std::move(result.value());
-		dataPollFileDescriptors = { pollfd(incomingDataRequestSocket.sock, POLLRDNORM, NULL) };
-	}
-	else throw std::exception("Could not create incomingDataRequestSocket!");
 }
 
-SERPServer::~SERPServer()
+void Server::run()
 {
-}
-
-void SERPServer::run()
-{
-	// Start dataSocketLoop on seperate thread
-	std::thread dataSocketLoopThread = std::thread(&SERPServer::runDataSocketLoop, this);
-	// Start main loop
 	if (!SnackerEngine::markAsListen(incomingConnectRequestSocket)) throw std::exception("Could not mark incomingConnectRequestSocket as listening!");
+	printMessage("Started Server!");
 	while (true) {
 		// First process events
-		int result = WSAPoll(&clientPollFileDescriptors[0], clientPollFileDescriptors.size(), 1000);
+		int result = WSAPoll(&incomingRequestFileDescriptor, 1, 5000);
 		if (result == SOCKET_ERROR) throw std::runtime_error(std::string("Socket error with error code " + std::to_string(WSAGetLastError()) + " occured during call to poll()!"));
-		if (result > 0) {
-			// Handle incomingConnectRequestSocket
-			if (clientPollFileDescriptors[0].revents != NULL) {
-				checkForPollError(clientPollFileDescriptors[0].revents);
-				if (clientPollFileDescriptors[0].revents & POLLHUP) {
-					throw std::exception("Connection to incomingConnectRequestSocket failed!");
-				}
-				if (clientPollFileDescriptors[0].revents & POLLRDNORM) {
-					std::optional<SnackerEngine::SocketTCP> clientSocket = SnackerEngine::acceptConnectionRequest(incomingConnectRequestSocket);
-					if (clientSocket.has_value()) {
-						connectNewClient(std::move(clientSocket.value()));
-					}
+		if (incomingRequestFileDescriptor.revents != NULL) {
+			if (incomingRequestFileDescriptor.revents & POLLRDNORM) {
+				// Connect new client
+				std::optional<SnackerEngine::SocketTCP> clientSocket = SnackerEngine::acceptConnectionRequest(incomingConnectRequestSocket);
+				if (clientSocket.has_value()) {
+					connectClient(std::move(clientSocket.value()));
 				}
 			}
-			// Handle remaining sockets
-			for (unsigned i = 1; i < clientPollFileDescriptors.size(); ++i) {
-				if (clientPollFileDescriptors[i].revents & POLLNVAL) {
-					throw std::exception("POLLNVAL occured");
-				}
-				else if (clientPollFileDescriptors[i].revents & POLLERR) {
-					// Client socket disconnected with error
-					disconnectClient(i - 1);
-					std::cout << "client has disconnected with error!" << std::endl;
-				}
-				else if (clientPollFileDescriptors[i].revents & POLLHUP) {
-					// Client has disconnected
-					disconnectClient(i - 1);
-					std::cout << "cclient has disconnected!" << std::endl;
-				}
-				else if (clientPollFileDescriptors[i].revents & POLLRDNORM) {
-					// Client has sent a message
-					std::cout << "client has sent a message!" << std::endl;
-					handleIncomingMessage(clients[static_cast<std::size_t>(i) - 1]);
-				}
+			else if (incomingRequestFileDescriptor.revents & POLLERR) {
+				throw std::runtime_error(std::string("POLLERR in incomingRequestFileDescriptor."));
+			}
+			else if (incomingRequestFileDescriptor.revents & POLLNVAL) {
+				throw std::runtime_error(std::string("POLLNVAL in incomingRequestFileDescriptor."));
+			}
+			else if (incomingRequestFileDescriptor.revents & POLLHUP) {
+				throw std::runtime_error(std::string("POLLHUP in incomingRequestFileDescriptor."));
 			}
 		}
-		else {
-			//std::cout << "no event detected!" << std::endl; DEBUG
+		int numberOfConnectedClients = 0;
+		{
+			std::lock_guard lock(clientsMapMutex);
+			numberOfConnectedClients = static_cast<int>(clients.size());
+		}
+		// Try to delete disconnected clients
+		for (auto it = disconnectedClients.begin(); it != disconnectedClients.end();) {
+			if ((*it)->receiverThreadFinished) {
+				it = disconnectedClients.erase(it);
+			}
+			else {
+				it++;
+			}
+		}
+		printMessage("Currently " + SnackerEngine::to_string(numberOfConnectedClients) + " clients connected.");
+		if (!disconnectedClients.empty()) {
+			printMessage("Currently " + SnackerEngine::to_string(disconnectedClients.size()) + " clients waiting for disconnect.");
 		}
 	}
+}
+
+Server::~Server()
+{
+	// TODO: Write destructor.
 }

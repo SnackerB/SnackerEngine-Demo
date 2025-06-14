@@ -1,67 +1,64 @@
 #pragma once
-
-#include <vector>
-
 #include "Client.h"
-#include "Utility\Buffer.h"
-#include "Network\SERP\SERP.h"
-#include "Network\SERP\SERPEndpoint.h"
+#include <unordered_map>
 
-class SERPServer
+class Server 
 {
 private:
-	/// Collection of Clients
-	std::vector<Client> clients;
-	/// Collection of pollFileDescriptors for ease of use of the poll() function. This collection of
-	/// pollFileDescriptors is used for accepting new clients and receiving short messages.
-	std::vector<pollfd> clientPollFileDescriptors;
-	/// TCP Socket for accepting incoming connection requests
+	/// Timeout in ms for poll file descriptors
+	unsigned pollFdTimeout = 1000;
+	/// Number of retries for generating new SerpID
+	unsigned numberOfRetriesSerpID = 10;
+	/// Mutex for printing to console
+	std::mutex printToConsoleMutex;
+	/// Map of connected clients, with mutex for thread safe access
+	std::unordered_map<unsigned, std::shared_ptr<Client>> clients;
+	std::mutex clientsMapMutex;
+	/// Vector of disconnected clients where the receiver thread hasn't yet ended
+	std::vector<std::shared_ptr<Client>> disconnectedClients;
+	/// Thread safe helper function for writing messages to the console/output
+	void printMessage(const std::string& message);
+	/// Thread safe helper function that looks for a client with the given SerpID and returns a shared pointer to the client
+	/// (or nullptr if the client is not connected)
+	std::shared_ptr<Client> getClient(SnackerEngine::SERPID serpID);
+	/// Socket for accepting incoming requests
 	SnackerEngine::SocketTCP incomingConnectRequestSocket;
-	/// TCP Socket for accepting incoming data socket connection requests
-	SnackerEngine::SocketTCP incomingDataRequestSocket;
-	/// A buffer that is used as temporary storage
-	SnackerEngine::Buffer storageBuffer;
-	/// How many tries are done to obtain a valid serpID
-	static constexpr unsigned numberOfRetriesSerpID = 10;
-private:
-	/// Check if the given SERPID is valid
-	bool isValidSerpID(SnackerEngine::SERPID id);
-	/// Tries to connect a new client with the given socket
-	void connectNewClient(SnackerEngine::SocketTCP socket);
-	/// Tries to connect a new data socket
-	void connectDataSocket(SnackerEngine::SocketTCP socket);
-	/// Disconnects the client at the given index
-	void disconnectClient(unsigned index);
-	/// Receives a message from the given socket
+	/// File descriptor for incoming requests
+	pollfd incomingRequestFileDescriptor;
+	/// Thread safe helper function for connecting a new client and assigning a new serpID.
+	void connectClient(SnackerEngine::SocketTCP socket);
+	/// Thread safe helper function for removing a client from the clients map
+	void disconnectClient(SnackerEngine::SERPID serpID);
+	/// Helper function that sends the given response to the given client (by putting it in the appropriate queue. The
+	/// actual sending is then done by the sender thread of the appropriate client).
+	void sendMessageResponse(const SnackerEngine::SERPRequest& request, Client& client, SnackerEngine::ResponseStatusCode responseStatusCode, const std::string& message, SnackerEngine::SERPID sourceID = SnackerEngine::SERPID::SERVER_ID);
+	/// Helper function that prepares a message for relay. Returns false if the message is in any way invalid.
+	bool prepareForRelay(const SnackerEngine::SERPMessage& message, Client& source);
+	/// Helper function that trys to relay a request from client to client.
+	void relayRequest(Client& source, SnackerEngine::SERPID destination, std::unique_ptr<SnackerEngine::SERPMessage> request);
+	/// Relays the HTTP request from the source client to the multiple destination clients (destinations clients stored in )
+	void relayRequestMulti(Client& source, std::unique_ptr<SnackerEngine::SERPMessage> request);
+	/// Helper function that trys to relay a response from client to client.
+	void relayResponse(Client& source, SnackerEngine::SERPID destination, std::unique_ptr<SnackerEngine::SERPMessage> response);
+	/// Helper function that answers a request from a client that asks if another client exists.
+	void answerClientExistsRequest(Client& client, const SnackerEngine::SERPRequest& request, const std::string& requestedClient);
+	/// Helper function that handles an incoming request to the server (thats us!)
+	void handleIncomingRequestToServer(Client& client, std::unique_ptr<SnackerEngine::SERPMessage> request);
+	/// Helper function that handles an incoming request from the given client
+	void handleIncomingRequest(Client& client, std::unique_ptr<SnackerEngine::SERPMessage> request);
+	/// Helper function that handles an incoming response from the given client
+	void handleIncomingResponse(Client& client, std::unique_ptr<SnackerEngine::SERPMessage> response);
+	/// Helper function that receives a message from a client and relays/answers the message.
 	void handleIncomingMessage(Client& client);
-	/// Handles an incoming HTTP Request
-	void handleRequest(Client& client, SnackerEngine::SERPRequest& request);
-	/// Handles an incoming HTTP Request that is directed at the server as per SERP protocol
-	void handleRequestToServer(Client& client, SnackerEngine::SERPRequest& request);
-	/// Handles an incoming HTTP Response
-	void handleResponse(Client& client, SnackerEngine::SERPResponse& response);
-	/// Finds the index to the client with the given serpID, if it exists
-	std::optional<std::size_t> findClientIndex(SnackerEngine::SERPID serpID);
-	/// Answers a ping request of the given client
-	void answerPingRequest(const SnackerEngine::SERPRequest& request, Client& client);
-	/// Answers a serpID request of the given client
-	void answerSerpIDRequest(const SnackerEngine::SERPRequest& request, Client& client);
-	/// Answers a doesClientExist request from the given client. The serpID of the requested client
-	/// is given as a string
-	void answerClientExistsRequest(const SnackerEngine::SERPRequest& request, Client& client, const std::string& requestedClient);
-	/// Sends a response with the given status code and a string in the message body to the given socket
-	void sendMessageResponse(const SnackerEngine::SERPRequest& request, Client& client, SnackerEngine::ResponseStatusCode responseStatusCode, const std::string& message);
-	/// Checks if the given message is ok to relay, and changes the header structure accordingly
-	bool prepareForRelay(SnackerEngine::SERPMessage& message, Client& source);
-	/// Relays the HTTP request from the source client to the destination client
-	void relayRequest(Client& source, Client& destination, SnackerEngine::SERPRequest& request);
-	/// Relays the HTTP response from the source client to the destination client
-	void relayResponse(Client& source, Client& destination, SnackerEngine::SERPResponse& response);
+	/// Helper function that runs a receiver thread on the given client, listening for messages and relaying/answering them.
+	void runReceiverThread(std::shared_ptr<Client> client);
 public:
 	/// Constructor
-	SERPServer();
-	/// Destructor
-	~SERPServer();
-	/// Starts the server main loop
+	Server();
+	/// Runs the main loop, listening for connection requests and invoking new threads for connected clients.
 	void run();
+	/// Destructor
+	~Server();
+
+
 };

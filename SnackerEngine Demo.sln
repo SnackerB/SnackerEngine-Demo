@@ -3,19 +3,13 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.3.32901.215
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Chat Application", "Chat Application\Chat Application.vcxproj", "{17E87F89-C9D9-4F4A-B7E7-DB0ABF0ECA59}"
-EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "GUI Demo", "GUI Demo\GUI Demo.vcxproj", "{DC787002-F5EB-4EC9-8C2E-393A2E133FA5}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Model Loading Rave Party", "Model Loading Rave Party\Model Loading Rave Party.vcxproj", "{EC1789EB-9E5E-463D-BA97-2132B449A873}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Textured Scene", "Textured Scene\Textured Scene.vcxproj", "{70F9C60A-3527-4F26-A2F8-8A1F5B24F012}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SERP Server", "SERP Server\SERP Server.vcxproj", "{81600A5F-0608-4911-B20E-90A542EFD178}"
-EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Network test", "Network test\Network test.vcxproj", "{DD492AB7-A860-4C9B-85B9-4DFBF90894E1}"
-EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SERP Server 2", "SERP Server 2\SERP Server 2.vcxproj", "{24422740-C0E1-4FA7-B65F-0BEC0EF1B1E2}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SERP Server", "SERP Server\SERP Server.vcxproj", "{24422740-C0E1-4FA7-B65F-0BEC0EF1B1E2}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -25,14 +19,6 @@ Global
 		Release|x86 = Release|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{17E87F89-C9D9-4F4A-B7E7-DB0ABF0ECA59}.Debug|x64.ActiveCfg = Debug|x64
-		{17E87F89-C9D9-4F4A-B7E7-DB0ABF0ECA59}.Debug|x64.Build.0 = Debug|x64
-		{17E87F89-C9D9-4F4A-B7E7-DB0ABF0ECA59}.Debug|x86.ActiveCfg = Debug|Win32
-		{17E87F89-C9D9-4F4A-B7E7-DB0ABF0ECA59}.Debug|x86.Build.0 = Debug|Win32
-		{17E87F89-C9D9-4F4A-B7E7-DB0ABF0ECA59}.Release|x64.ActiveCfg = Release|x64
-		{17E87F89-C9D9-4F4A-B7E7-DB0ABF0ECA59}.Release|x64.Build.0 = Release|x64
-		{17E87F89-C9D9-4F4A-B7E7-DB0ABF0ECA59}.Release|x86.ActiveCfg = Release|Win32
-		{17E87F89-C9D9-4F4A-B7E7-DB0ABF0ECA59}.Release|x86.Build.0 = Release|Win32
 		{DC787002-F5EB-4EC9-8C2E-393A2E133FA5}.Debug|x64.ActiveCfg = Debug|x64
 		{DC787002-F5EB-4EC9-8C2E-393A2E133FA5}.Debug|x64.Build.0 = Debug|x64
 		{DC787002-F5EB-4EC9-8C2E-393A2E133FA5}.Debug|x86.ActiveCfg = Debug|Win32
@@ -57,22 +43,6 @@ Global
 		{70F9C60A-3527-4F26-A2F8-8A1F5B24F012}.Release|x64.Build.0 = Release|x64
 		{70F9C60A-3527-4F26-A2F8-8A1F5B24F012}.Release|x86.ActiveCfg = Release|Win32
 		{70F9C60A-3527-4F26-A2F8-8A1F5B24F012}.Release|x86.Build.0 = Release|Win32
-		{81600A5F-0608-4911-B20E-90A542EFD178}.Debug|x64.ActiveCfg = Debug|x64
-		{81600A5F-0608-4911-B20E-90A542EFD178}.Debug|x64.Build.0 = Debug|x64
-		{81600A5F-0608-4911-B20E-90A542EFD178}.Debug|x86.ActiveCfg = Debug|Win32
-		{81600A5F-0608-4911-B20E-90A542EFD178}.Debug|x86.Build.0 = Debug|Win32
-		{81600A5F-0608-4911-B20E-90A542EFD178}.Release|x64.ActiveCfg = Release|x64
-		{81600A5F-0608-4911-B20E-90A542EFD178}.Release|x64.Build.0 = Release|x64
-		{81600A5F-0608-4911-B20E-90A542EFD178}.Release|x86.ActiveCfg = Release|Win32
-		{81600A5F-0608-4911-B20E-90A542EFD178}.Release|x86.Build.0 = Release|Win32
-		{DD492AB7-A860-4C9B-85B9-4DFBF90894E1}.Debug|x64.ActiveCfg = Debug|x64
-		{DD492AB7-A860-4C9B-85B9-4DFBF90894E1}.Debug|x64.Build.0 = Debug|x64
-		{DD492AB7-A860-4C9B-85B9-4DFBF90894E1}.Debug|x86.ActiveCfg = Debug|Win32
-		{DD492AB7-A860-4C9B-85B9-4DFBF90894E1}.Debug|x86.Build.0 = Debug|Win32
-		{DD492AB7-A860-4C9B-85B9-4DFBF90894E1}.Release|x64.ActiveCfg = Release|x64
-		{DD492AB7-A860-4C9B-85B9-4DFBF90894E1}.Release|x64.Build.0 = Release|x64
-		{DD492AB7-A860-4C9B-85B9-4DFBF90894E1}.Release|x86.ActiveCfg = Release|Win32
-		{DD492AB7-A860-4C9B-85B9-4DFBF90894E1}.Release|x86.Build.0 = Release|Win32
 		{24422740-C0E1-4FA7-B65F-0BEC0EF1B1E2}.Debug|x64.ActiveCfg = Debug|x64
 		{24422740-C0E1-4FA7-B65F-0BEC0EF1B1E2}.Debug|x64.Build.0 = Debug|x64
 		{24422740-C0E1-4FA7-B65F-0BEC0EF1B1E2}.Debug|x86.ActiveCfg = Debug|Win32

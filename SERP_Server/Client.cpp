@@ -33,6 +33,7 @@ void Client::runSenderThread()
 			// If the queue was empty, leave the loop
 			if (!message) break;
 			// Else just keep sending messages
+			std::cout << "SENT MESSAGE!" << std::endl;
 			endpoint.finalizeAndSendMessage(*message, false);
 		}
 	}

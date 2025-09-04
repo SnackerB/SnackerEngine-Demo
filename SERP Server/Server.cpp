@@ -1,6 +1,6 @@
 #include "Server.h"
 #include <iostream>
-#include "Utility\Formatting.h"
+#include "Utility/Formatting.h"
 
 void Server::printMessage(const std::string& message)
 {
@@ -15,7 +15,7 @@ std::shared_ptr<Client> Server::getClient(SnackerEngine::SERPID serpID)
 	// Acquire lock
 	std::lock_guard lockGuard(clientsMapMutex);
 	// Look for client with the given ID
-	auto result = clients.find(unsigned int(serpID));
+	auto result = clients.find(static_cast<unsigned int>(serpID));
 	// If the client was found, return the client, else return nullptr
 	if (result == clients.end()) return nullptr;
 	else return result->second;
@@ -24,7 +24,7 @@ std::shared_ptr<Client> Server::getClient(SnackerEngine::SERPID serpID)
 void Server::connectClient(SnackerEngine::SocketTCP socket)
 {
 	std::shared_ptr<Client> newClient = nullptr;
-	SnackerEngine::SERPID newSerpID = unsigned int(0);
+	SnackerEngine::SERPID newSerpID = static_cast<unsigned int>(0);
 	{
 		// Acquire lock
 		std::lock_guard lock(clientsMapMutex);
@@ -38,7 +38,7 @@ void Server::connectClient(SnackerEngine::SocketTCP socket)
 		bool success = false;
 		for (unsigned i = 0; i < numberOfRetriesSerpID; ++i) {
 			newSerpID = SnackerEngine::getRandomSerpID();
-			auto result = clients.find(unsigned int(newSerpID));
+			auto result = clients.find(static_cast<unsigned int>(newSerpID));
 			if (result == clients.end()) {
 				success = true;
 				break;
@@ -46,7 +46,7 @@ void Server::connectClient(SnackerEngine::SocketTCP socket)
 		}
 		if (success) {
 			newClient = std::make_shared<Client>(std::move(socket), newSerpID);
-			clients.insert(std::make_pair<>(unsigned int(newSerpID), newClient));
+			clients.insert(std::make_pair<>(static_cast<unsigned int>(newSerpID), newClient));
 			// Start sender and receiver threads
 			newClient->senderThread = std::thread(&Client::runSenderThread, newClient.get());
 			newClient->receiverThread = std::thread(&Server::runReceiverThread, this, newClient);
@@ -62,7 +62,7 @@ void Server::disconnectClient(SnackerEngine::SERPID serpID)
 	// Acquire lock
 	std::lock_guard lockGuard(clientsMapMutex);
 	// Erase client from clients map
-	auto client = clients.find(unsigned int(serpID));
+	auto client = clients.find(static_cast<unsigned int>(serpID));
 	if (client != clients.end()) {
 		client->second->disconnect();
 		disconnectedClients.push_back(client->second);
@@ -162,7 +162,7 @@ void Server::answerClientExistsRequest(Client& client, const SnackerEngine::SERP
 		{
 			// Acquire lock
 			std::lock_guard lockGuard(clientsMapMutex);
-			auto result = clients.find(unsigned int(requestedClientID.value()));
+			auto result = clients.find(static_cast<unsigned int>(requestedClientID.value()));
 			if (result != clients.end()) success = true;
 		}
 		if (success) {
@@ -243,13 +243,30 @@ void Server::handleIncomingMessage(Client& client)
 void Server::runReceiverThread(std::shared_ptr<Client> client)
 {
 	// Create poll file descriptor for listening to received messages on client socket
+#ifdef _WINDOWS
 	pollfd clientPollFD(client->endpoint.getTCPEndpoint().getSocket().sock, POLLRDNORM, NULL);
+#endif // _WINDOWS
+#ifdef _LINUX
+	pollfd clientPollFD(client->endpoint.getTCPEndpoint().getSocket().sock, POLLRDNORM, 0);
+#endif // _LINUX
 	while (client->connected) {
 		// Listen for message
+#ifdef _WINDOWS
 		int result = WSAPoll(&clientPollFD, 1, pollFdTimeout);
 		if (result == SOCKET_ERROR) {
+#endif // _WINDOWS
+#ifdef _LINUX
+		int result = poll(&clientPollFD, 1, pollFdTimeout);
+		if (result == -1) {
+#endif // _LINUX
+		
 			// Write error to chat, disconnect client and end thread
+#ifdef _WINDOWS
 			printMessage("Socket error with error code " + SnackerEngine::to_string(WSAGetLastError()) + " occured during call to poll() on on client with SERPID" + SnackerEngine::to_string(client->serpID) + "!");
+#endif // _WINDOWS
+#ifdef _LINUX
+			printMessage("Socket error with error code " + std::string(strerror(errno)) + " occured during call to poll() on on client with SERPID" + SnackerEngine::to_string(client->serpID) + "!");
+#endif // _LINUX
 			disconnectClient(client->serpID);
 			break;
 		}
@@ -287,20 +304,32 @@ Server::Server()
 	auto result = SnackerEngine::createSocketTCP(SnackerEngine::getSERPServerPort());
 	if (result.has_value()) {
 		incomingConnectRequestSocket = std::move(result.value());
+#ifdef _WINDOWS
 		incomingRequestFileDescriptor = pollfd(incomingConnectRequestSocket.sock, POLLRDNORM, NULL);
+#endif // _WINDOWS
+#ifdef _LINUX
+		incomingRequestFileDescriptor = pollfd(incomingConnectRequestSocket.sock, POLLRDNORM, 0);
+#endif // _LINUX
 	}
-	else throw std::exception("Could not create incomingConnectRequestSocket!");
+	else throw std::runtime_error("Could not create incomingConnectRequestSocket!");
 }
 
 void Server::run()
 {
-	if (!SnackerEngine::markAsListen(incomingConnectRequestSocket)) throw std::exception("Could not mark incomingConnectRequestSocket as listening!");
+	if (!SnackerEngine::markAsListen(incomingConnectRequestSocket)) throw std::runtime_error("Could not mark incomingConnectRequestSocket as listening!");
 	printMessage("Started Server!");
 	while (true) {
 		// First process events
+#ifdef _WINDOWS
 		int result = WSAPoll(&incomingRequestFileDescriptor, 1, 5000);
 		if (result == SOCKET_ERROR) throw std::runtime_error(std::string("Socket error with error code " + std::to_string(WSAGetLastError()) + " occured during call to poll()!"));
 		if (incomingRequestFileDescriptor.revents != NULL) {
+#endif // _WINDOWS
+#ifdef _LINUX
+		int result = poll(&incomingRequestFileDescriptor, 1, 5000);
+		if (result == -1) throw std::runtime_error(std::string("Socket error with error code ") + std::string(strerror(errno)) + std::string(" occured during call to poll()!"));
+		if (incomingRequestFileDescriptor.revents != 0) {
+#endif // _LINUX
 			if (incomingRequestFileDescriptor.revents & POLLRDNORM) {
 				// Connect new client
 				std::optional<SnackerEngine::SocketTCP> clientSocket = SnackerEngine::acceptConnectionRequest(incomingConnectRequestSocket);

@@ -1,6 +1,6 @@
 #include <iostream>
 #include "Server.h"
-#include "Network\Network.h"
+#include "Network/Network.h"
 
 int main()
 {

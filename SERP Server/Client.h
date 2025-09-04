@@ -1,7 +1,11 @@
-#include "Network\SERP\SERPEndpoint.h"
+#include "Network/SERP/SERPEndpoint.h"
 #include <mutex>
 #include <condition_variable>
 #include <queue>
+
+#ifdef _LINUX
+	#include <poll.h>
+#endif // _LINUX
 
 /// This class represents a connected client.
 class Client

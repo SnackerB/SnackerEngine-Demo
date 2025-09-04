@@ -1,0 +1,1 @@
+/usr/bin/c++ CMakeFiles/startSERPServer.dir/startServer.cpp.o CMakeFiles/startSERPServer.dir/Client.cpp.o CMakeFiles/startSERPServer.dir/Server.cpp.o -o startSERPServer  ../../SnackerEngine/Utility/libUtility.a ../../SnackerEngine/Math/libMath.a ../../SnackerEngine/Network/libNetwork.a 

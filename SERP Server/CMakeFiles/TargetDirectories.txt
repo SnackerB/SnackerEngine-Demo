@@ -1,0 +1,5 @@
+/media/benjamin/Data2/dev/SnackerEngine-Demo/SERP Server/CMakeFiles/SERPServer.dir
+/media/benjamin/Data2/dev/SnackerEngine-Demo/SERP Server/CMakeFiles/startSERPServer.dir
+/media/benjamin/Data2/dev/SnackerEngine-Demo/SERP Server/CMakeFiles/terminateSERPServer.dir
+/media/benjamin/Data2/dev/SnackerEngine-Demo/SERP Server/CMakeFiles/edit_cache.dir
+/media/benjamin/Data2/dev/SnackerEngine-Demo/SERP Server/CMakeFiles/rebuild_cache.dir

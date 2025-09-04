@@ -18,6 +18,7 @@ void Client::runSenderThread()
 		lock.unlock();
 		// Now we can send the message
 		endpoint.finalizeAndSendMessage(*message, false);
+		std::cout << "SENT MESSAGE!" << std::endl;
 		// Check if there are now more messages we can send
 		while (true) {
 			std::unique_ptr<SnackerEngine::SERPMessage> message = nullptr;
@@ -33,8 +34,8 @@ void Client::runSenderThread()
 			// If the queue was empty, leave the loop
 			if (!message) break;
 			// Else just keep sending messages
-			std::cout << "SENT MESSAGE!" << std::endl;
 			endpoint.finalizeAndSendMessage(*message, false);
+			std::cout << "SENT MESSAGE!" << std::endl;
 		}
 	}
 }

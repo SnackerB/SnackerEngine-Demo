@@ -9,7 +9,7 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Model Loading Rave Party", 
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Textured Scene", "Textured Scene\Textured Scene.vcxproj", "{70F9C60A-3527-4F26-A2F8-8A1F5B24F012}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SERP Server", "SERP Server\SERP Server.vcxproj", "{24422740-C0E1-4FA7-B65F-0BEC0EF1B1E2}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SERP_Server", "SERP_Server\SERP_Server.vcxproj", "{24422740-C0E1-4FA7-B65F-0BEC0EF1B1E2}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

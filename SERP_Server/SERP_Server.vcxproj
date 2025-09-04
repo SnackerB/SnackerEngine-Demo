@@ -24,7 +24,7 @@
     <ProjectGuid>{24422740-c0e1-4fa7-b65f-0bec0ef1b1e2}</ProjectGuid>
     <RootNamespace>SERPServer2</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
-    <ProjectName>SERP Server</ProjectName>
+    <ProjectName>SERP_Server</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">

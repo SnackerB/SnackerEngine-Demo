@@ -229,13 +229,19 @@ void Server::handleIncomingResponse(Client& client, std::unique_ptr<SnackerEngin
 
 void Server::handleIncomingMessage(Client& client)
 {
-	std::vector<std::unique_ptr<SnackerEngine::SERPMessage>> result = std::move(client.endpoint.receiveMessages());
-	for (unsigned int i = 0; i < result.size(); ++i) {
-		if (result[i]->isRequest()) {
-			handleIncomingRequest(client, std::move(result[i]));
-		}
-		else {
-			handleIncomingResponse(client, std::move(result[i]));
+	std::optional<std::vector<std::unique_ptr<SnackerEngine::SERPMessage>>> result = std::move(client.endpoint.receiveMessages());
+	if (!result.has_value()) {
+		printMessage("Client with SERPID " + SnackerEngine::to_string(client.serpID) + " disconnected with error.");
+		disconnectClient(client.serpID);
+	}
+	else {
+		for (unsigned int i = 0; i < result.value().size(); ++i) {
+			if (result.value()[i]->isRequest()) {
+				handleIncomingRequest(client, std::move(result.value()[i]));
+			}
+			else {
+				handleIncomingResponse(client, std::move(result.value()[i]));
+			}
 		}
 	}
 }
